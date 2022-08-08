@@ -2,7 +2,7 @@
 
 set -e
 
-# TODO remove the application logic to make this script agnostic
+# TODO remove the application-specific logic to make this script agnostic (references to gfe-db release values etc)
 
 # Send task failure if script errors
 send_result () {

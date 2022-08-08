@@ -112,7 +112,7 @@ It is also possible to deploy or update individual services.
    make deploy.infrastructure
 
    # Deploy/update only the database service
-   make deploy.database
+   make database.deploy
 
    # Deploy/update only the pipeline service
    make deploy.pipeline
@@ -131,7 +131,7 @@ command.
 
 .. code:: bash
 
-   make deploy.config
+   make config.deploy
 
 Clean Up
 ~~~~~~~~

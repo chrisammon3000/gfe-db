@@ -544,7 +544,7 @@ Deploy specific stacks.
 
 .. code:: bash
 
-   make deploy.database
+   make database.deploy
 
 .. code:: bash
 

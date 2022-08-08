@@ -429,7 +429,7 @@ command.
 
 .. code:: bash
 
-   make deploy.config
+   make config.deploy
 
 Graph Database
 ~~~~~~~~~~~~~~
@@ -544,7 +544,7 @@ Deploy specific stacks.
 
 .. code:: bash
 
-   make deploy.database
+   make database.deploy
 
 .. code:: bash
 
@@ -554,7 +554,7 @@ Deploy config files and scripts to S3:
 
 .. code:: bash
 
-   make deploy.config
+   make config.deploy
 
 Load releases
 ~~~~~~~~~~~~~

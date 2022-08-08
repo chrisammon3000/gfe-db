@@ -9,14 +9,14 @@ target:
 
 deploy:
 	@echo "$$(gdate -u +'%Y-%m-%d %H:%M:%S.%3N') - Deploying ${SERVICE} service" 2>&1 | tee -a $$CFN_LOG_PATH
-	$(MAKE) deploy.check-key-pair
-	$(MAKE) deploy.config
-	$(MAKE) deploy.database
+	$(MAKE) database.check-key-pair
+	$(MAKE) config.deploy
+	$(MAKE) database.deploy
 	# Won't copy most recent logs if database is still initializing
 	# $(MAKE) deploy.copy-s3-logs
 
 
-deploy.check-key-pair: ##=> Checks if the key pair already exists and creates it if it does not
+database.check-key-pair: ##=> Checks if the key pair already exists and creates it if it does not
 	@echo "$$(gdate -u +'%Y-%m-%d %H:%M:%S.%3N') - Checking for key pair ${EC2_KEY_PAIR_NAME}" 2>&1 | tee -a $$CFN_LOG_PATH
 	@key_pair="$$(aws ec2 describe-key-pairs --key-name ${EC2_KEY_PAIR_NAME} | jq '.KeyPairs[0].KeyName' || true)" && \
 	[ "$$key_pair" ] && echo "Key pair found: $$key_pair" && exit 0 || echo "No key pair found..." && \
@@ -51,7 +51,7 @@ config.cloudwatch-agent:
 
 # TODO: get endpoint and store as SSM parameter to replace resource in CloudFormation template
 # TODO: on deploy/redeploy, retrieve Neo4jPassword from Secrets and pass as CloudFormation parameter
-deploy.database:
+database.deploy:
 	@echo "$$(gdate -u +'%Y-%m-%d %H:%M:%S.%3N') - Deploying Neo4j to EC2 with ${NEO4J_AMI_ID}" 2>&1 | tee -a $$CFN_LOG_PATH
 	@aws cloudformation deploy \
 		--region $${REGION} \

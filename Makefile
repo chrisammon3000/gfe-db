@@ -43,13 +43,14 @@ export INSTANCE_ID ?= $(shell aws ssm get-parameters \
 
 export INSTANCE_STATE ?= $(shell aws ec2 describe-instance-status | jq -r '.InstanceStatuses[] | select(.InstanceId | contains("i-0ea29a765388720a8")).InstanceState.Name')
 
-export NEO4J_ENDPOINT ?= $(shell aws ssm get-parameters \
-	--names "/$${APP_NAME}/$${STAGE}/$${REGION}/Neo4jDatabaseEndpoint" \
-	| jq -r '.Parameters | map(select(.Version == 1))[0].Value')
+# export NEO4J_ENDPOINT ?= $(shell aws ssm get-parameters \
+# 	--names "/$${APP_NAME}/$${STAGE}/$${REGION}/Neo4jDatabaseEndpoint" \
+# 	| jq -r '.Parameters | map(select(.Version == 1))[0].Value')
 
-# Uses a prexisting hosted zone, available in the Route53 console
-# Automate sourcing this variable
-export HOSTED_ZONE_ID ?= Z1B70QOX271VPU
+# # Only applies to Route53 DNS
+# # Uses a prexisting hosted zone, available in the Route53 console
+# # Automate sourcing this variable
+# export HOSTED_ZONE_ID ?= Z1B70QOX271VPU
 
 # # Capture datetime of most recent parameter change (force refresh paramter references)
 # export SSM_PARAM_MODIFIED ?= $(shell aws ssm describe-parameters \
@@ -79,7 +80,7 @@ logs.dirs:
 		"${LOGS_DIR}/pipeline/load" \
 		"${LOGS_DIR}/database/bootstrap" || true
 
-check.env: check.dependencies
+check.env: dependencies.check
 ifndef AWS_PROFILE
 $(error AWS_PROFILE is not set. Please select an AWS profile to use.)
 endif
@@ -94,34 +95,34 @@ $(error ADMIN_EMAIL is not set.)
 endif
 	@echo "$$(gdate -u +'%Y-%m-%d %H:%M:%S.%3N') - Found environment variables" 2>&1 | tee -a ${CFN_LOG_PATH}
 
-check.dependencies:
-	$(MAKE) check.dependencies.docker
-	$(MAKE) check.dependencies.awscli
-	$(MAKE) check.dependencies.samcli
-	$(MAKE) check.dependencies.jq
+dependencies.check:
+	$(MAKE) dependencies.check.docker
+	$(MAKE) dependencies.check.awscli
+	$(MAKE) dependencies.check.samcli
+	$(MAKE) dependencies.check.jq
 
-check.dependencies.docker:
+dependencies.check.docker:
 	@if ! docker info >/dev/null 2>&1; then \
 		echo "**** Docker is not running. Please start Docker before deploying. ****" && \
 		echo "**** Please refer to the documentation for a list of prerequisistes. ****" && \
 		exit 1; \
 	fi
 
-check.dependencies.awscli:
+dependencies.check.awscli:
 	@if ! aws --version >/dev/null 2>&1; then \
 		echo "**** AWS CLI not found. Please install AWS CLI before deploying. ****" && \
 		echo "**** Please refer to the documentation for a list of prerequisistes. ****" && \
 		exit 1; \
 	fi
 
-check.dependencies.samcli:
+dependencies.check.samcli:
 	@if ! sam --version >/dev/null 2>&1; then \
 		echo "**** SAM CLI not found. Please install SAM CLI before deploying. ****" && \
 		echo "**** Please refer to the documentation for a list of prerequisistes. ****" && \
 		exit 1; \
 	fi
 
-check.dependencies.jq:
+dependencies.check.jq:
 	@if ! jq --version >/dev/null 2>&1; then \
 		echo "**** jq not found. Please install jq before deploying. ****" && \
 		echo "**** Please refer to the documentation for a list of prerequisistes. ****" && \
@@ -174,8 +175,11 @@ database.stop:
 	echo "Previous state: $$(echo "$$response" | jq -r '.StoppingInstances[] | select(.InstanceId | contains("${INSTANCE_ID}")).PreviousState.Name')" && \
 	echo "Current state: $$(echo "$$response" | jq -r '.StoppingInstances[] | select(.InstanceId | contains("${INSTANCE_ID}")).CurrentState.Name')"
 
+# TODO update this for custom hosting case to include domain and https
 database.get-endpoint:
-	@echo "http://$${NEO4J_ENDPOINT}:7473/browser/"
+	@echo "http://$$(aws ssm get-parameters \
+		--names "/$${APP_NAME}/$${STAGE}/$${REGION}/Neo4jDatabaseEndpoint" \
+		| jq -r '.Parameters | map(select(.Version == 1))[0].Value'):7473/browser/"
 
 database.get-credentials:
 	@secret_string=$$(aws secretsmanager get-secret-value --secret-id ${APP_NAME}-${STAGE}-Neo4jCredentials | jq -r '.SecretString') && \
