@@ -60,6 +60,7 @@ endif
 # 	# certbot
 # 	# python
 
+# TODO decouple ssl.create-cert from bootstrap
 bootstrap:
 	# $(MAKE) cfn-helpers.install
 	# $(MAKE) ssm.install
@@ -68,6 +69,7 @@ bootstrap:
 	$(MAKE) eip.waiter
 	$(MAKE) ssl.create-cert
 
+# TODO add neo4j.publish-endpoint
 neo4j: bootstrap
 	$(MAKE) neo4j.publish-credentials
 	$(MAKE) neo4j.config.update
@@ -132,6 +134,7 @@ neo4j.restart:
 	@/opt/bitnami/ctlscript.sh restart
 	$(MAKE) neo4j.waiter
 
+# TODO add "-dns" flag to S3 neo4j.conf if using custom hosting
 neo4j.config.update:
 	@mv ${NEO4J_HOME}/conf/neo4j.conf ${NEO4J_HOME}/conf/neo4j.conf.bkp
 	@echo "Downloading Neo4j configuration from ${DATA_BUCKET_NAME}"

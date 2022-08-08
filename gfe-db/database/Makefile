@@ -1,11 +1,22 @@
+# TODO: add brackets to environment variables passed from root Makefile
+# TODO check environment before proceeding
+
 SERVICE := database
 EC2_KEY_PAIR_NAME := $${STAGE}-$${APP_NAME}-$${REGION}-neo4j-key
-
-# TODO: add brackets to environment variables passed from root Makefile
+HOST_DOMAIN ?= "$${SUBDOMAIN}.$${ROOT_DOMAIN}"
+HOSTED_ZONE_ID ?= $(shell aws route53 list-hosted-zones | \
+	jq -c '.HostedZones[] | \
+	select(.Name | contains("${ROOT_DOMAIN}")).Id' | \
+	sed "s/\/hostedzone\///g")
 
 target:
 	$(info ${HELP_MESSAGE})
 	@exit 0
+
+# TODO remove testing targets for deployment
+test:
+	@echo ${HOST_DOMAIN}
+	@echo ${HOSTED_ZONE_ID}
 
 deploy:
 	@echo "$$(gdate -u +'%Y-%m-%d %H:%M:%S.%3N') - Deploying ${SERVICE} service" 2>&1 | tee -a $$CFN_LOG_PATH
@@ -14,7 +25,6 @@ deploy:
 	$(MAKE) database.deploy
 	# Won't copy most recent logs if database is still initializing
 	# $(MAKE) deploy.copy-s3-logs
-
 
 database.check-key-pair: ##=> Checks if the key pair already exists and creates it if it does not
 	@echo "$$(gdate -u +'%Y-%m-%d %H:%M:%S.%3N') - Checking for key pair ${EC2_KEY_PAIR_NAME}" 2>&1 | tee -a $$CFN_LOG_PATH
@@ -30,7 +40,7 @@ database.check-key-pair: ##=> Checks if the key pair already exists and creates 
 
 config.deploy: config.neo4j config.scripts config.cloudwatch-agent
 
-# TODO: use sed to replace dbms.default_advertised_address=<FQDN> with the domain
+# TODO: use sed to replace dbms.default_advertised_address=<FQDN> with HOST_DOMAIN
 config.neo4j:
 	@aws s3 cp --recursive neo4j/ s3://$$DATA_BUCKET_NAME/config/neo4j/ 2>&1 | tee -a $$CFN_LOG_PATH
 
@@ -65,7 +75,8 @@ database.deploy:
 			Neo4jAmiId="$${NEO4J_AMI_ID}" \
 			Neo4jPassword="$${NEO4J_PASSWORD}" \
 			DatabaseVolumeSize="$${DATABASE_VOLUME_SIZE}" \
-			HostDomain="$${HOST_DOMAIN}" \
+			HostDomain="${HOST_DOMAIN}" \
+			HostedZoneId="${HOSTED_ZONE_ID}" \
 			AdminEmail="$${ADMIN_EMAIL}" \
 			APOCVersion="$${APOC_VERSION}" \
 			GDSVersion="$${GDS_VERSION}" 2>&1 | tee -a $$CFN_LOG_PATH || true

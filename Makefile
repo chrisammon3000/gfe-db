@@ -2,16 +2,22 @@
 # Bootstrapping variables
 ##########################
 
-# TODO add include and put all variables in .env (avoid having to run set -a && source .env etc.)
 # Application specific environment variables
+
+# # .env file example
+# STAGE=dev
+# APP_NAME=gfe-db
+# REGION=us-east-1
+# GITHUB_PERSONAL_ACCESS_TOKEN=<token>
+# ROOT_DOMAIN=example.com
+# SUBDOMAIN=gfe-db
+# ADMIN_EMAIL=<email>
+# APOC_VERSION=4.4.0.3
+# GDS_VERSION=2.0.1
+# NEO4J_AMI_ID=ami-04aa5da301f99bf58 <== requires AWS Marketplace Subscription
+
 include .env
 export
-
-# Base settings, these should almost never change
-export STAGE ?= dev
-export APP_NAME ?= gfe-db
-export AWS_ACCOUNT ?= $(shell aws sts get-caller-identity --query Account --output text)
-export REGION ?= us-east-1
 
 # TODO: Application Configuration, can move to JSON
 export ROOT_DIR ?= $(shell pwd)
@@ -19,43 +25,33 @@ export DATABASE_DIR ?= ${ROOT_DIR}/${APP_NAME}/database
 export LOGS_DIR ?= $(shell echo "${ROOT_DIR}/logs")
 export CFN_LOG_PATH ?= $(shell echo "${LOGS_DIR}/cfn/logs.txt")
 export PURGE_LOGS ?= false
-# export NEO4J_AMI_ID ?= ami-0e1324ddfc4d086bb # Neo4j Community Edition AMI is no longer supported; 
 
 # TODO move these to a config file
-# export NEO4J_AMI_ID ?= ami-076c8bb9db1ab34a3 # new AMI 
-export NEO4J_AMI_ID ?= ami-04aa5da301f99bf58 # Bitnami Neo4j, requires subscription through AWS Marketplace
 export DATABASE_VOLUME_SIZE ?= 50
 # TODO: Add TRIGGER_SCHEDULE variable
 # TODO: Add BACKUP_SCHEDULE variable
 
-# Resource identifiers
+# AWS Resource identifiers
+export AWS_ACCOUNT ?= $(shell aws sts get-caller-identity --query Account --output text)
 export DATA_BUCKET_NAME ?= ${STAGE}-${APP_NAME}-${AWS_ACCOUNT}-${REGION}
 export ECR_BASE_URI ?= ${AWS_ACCOUNT}.dkr.ecr.${REGION}.amazonaws.com
 export BUILD_REPOSITORY ?= ${STAGE}-${APP_NAME}-build-service
-export PIPELINE_STATE_PATH ?= config/IMGTHLA-repository-state.json
-export PIPELINE_PARAMS_PATH ?= config/pipeline-input.json
-export FUNCTIONS_PATH ?= ${APP_NAME}/pipeline/functions
 
+# TODO move to database layer
 export INSTANCE_ID ?= $(shell aws ssm get-parameters \
 		--names "/${APP_NAME}/${STAGE}/${REGION}/Neo4jDatabaseInstanceId" \
 		--output json \
 		| jq -r '.Parameters | map(select(.Version == 1))[0].Value')
+# TODO move to database layer
+export INSTANCE_STATE ?= $(shell aws ec2 describe-instance-status | \
+	jq -r '.InstanceStatuses[] | \
+	select(.InstanceId | \
+	contains("${INSTANCE_ID}")).InstanceState.Name')
 
-export INSTANCE_STATE ?= $(shell aws ec2 describe-instance-status | jq -r '.InstanceStatuses[] | select(.InstanceId | contains("i-0ea29a765388720a8")).InstanceState.Name')
-
-# export NEO4J_ENDPOINT ?= $(shell aws ssm get-parameters \
-# 	--names "/$${APP_NAME}/$${STAGE}/$${REGION}/Neo4jDatabaseEndpoint" \
-# 	| jq -r '.Parameters | map(select(.Version == 1))[0].Value')
-
-# # Only applies to Route53 DNS
-# # Uses a prexisting hosted zone, available in the Route53 console
-# # Automate sourcing this variable
-# export HOSTED_ZONE_ID ?= Z1B70QOX271VPU
-
-# # Capture datetime of most recent parameter change (force refresh paramter references)
-# export SSM_PARAM_MODIFIED ?= $(shell aws ssm describe-parameters \
-# 	| jq -c '.Parameters[] | select(.Name | contains("/${APP_NAME}/${STAGE}/${REGION}/"))' \
-# 	| jq -r '.LastModifiedDate' | sort -r | head -n 1)
+# S3 paths
+export PIPELINE_STATE_PATH ?= config/IMGTHLA-repository-state.json
+export PIPELINE_PARAMS_PATH ?= config/pipeline-input.json
+export FUNCTIONS_PATH ?= ${APP_NAME}/pipeline/functions
 
 target:
 	$(info ${HELP_MESSAGE})
@@ -87,8 +83,11 @@ endif
 ifndef GITHUB_PERSONAL_ACCESS_TOKEN
 $(error GITHUB_PERSONAL_ACCESS_TOKEN is not set.)
 endif
-ifndef HOST_DOMAIN
-$(error HOST_DOMAIN is not set.)
+ifndef ROOT_DOMAIN
+$(error ROOT_DOMAIN is not set.)
+endif
+ifndef SUBDOMAIN
+$(error SUBDOMAIN is not set.)
 endif
 ifndef ADMIN_EMAIL
 $(error ADMIN_EMAIL is not set.)
@@ -142,6 +141,9 @@ pipeline.deploy:
 config.deploy:
 	$(MAKE) -C ${APP_NAME}/pipeline/ config.deploy
 	$(MAKE) -C ${APP_NAME}/database/ config.deploy
+
+database.test:
+	$(MAKE) -C ${APP_NAME}/database/ test
 
 database.load:
 	@echo "Confirm payload:" && \
