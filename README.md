@@ -12,7 +12,7 @@ Graph database representing IPD-IMGT/HLA sequence data as GFE.
   - [Project Structure](#project-structure)
   - [Description](#description)
   - [Architecture](#architecture)
-    - [Infrastructure](#infrastructure)
+    - [Base Infrastructure](#base-infrastructure)
     - [Database](#database)
     - [Data Pipeline](#data-pipeline)
   - [Deployment](#deployment)
@@ -83,42 +83,43 @@ The `gfe-db` represents IPD-IMGT/HLA sequence data as GFE nodes and relationship
 
 <br>
 <p align="center">
-  <img src="docs/img/schema-light-v220218.png" alt="gfe-db schema" height="75%" width="75%">
+  <img src="docs/source/_static/img/schema-alpha-v220511.png" alt="gfe-db schema" height="75%" width="75%">
 </p>
 
 ## Architecture
 <br>
 <p align="center">
-  <img src="docs/img/gfe-db-arch-v220417.png" alt="gfe-db architecture diagram">
+  <img src="docs/source/_static/img/arch-v220417.png" alt="gfe-db architecture diagram">
 </p>
 
 gfe-db architecture is organized by 3 layers:
-1) Infrastructure 
+1) Base Infrastructure 
 2) Database 
 3) Data pipeline
  
 This allows deployments to be decoupled using Makefiles. Common configuration parameters are shared between resources using environment variables, JSON files, AWS SSM Paramter Store and Secrets Manager.
 
-### Infrastructure
-The infrastructure layer deploys a VPC, public subnet, S3 bucket, Elastic IP and common SSM parameters and secrets for the other services to use.
+### Base Infrastructure
+The base infrastructure layer deploys a VPC, public subnet, S3 bucket, Elastic IP and common SSM parameters and secrets for the other services to use.
 
 ### Database
 The database layer deploys an EC2 instance running the Neo4j Community Edition AMI (Ubuntu 18.04) into a public subnet. During initialization, Cypher queries are run to create constraints and indexes, which help speed up loading and ensure data integrity. Neo4j is ready to be accessed through a browser once the instance has booted sucessfully.
 
 ### Data Pipeline
-The data pipeline layer automates integration of newly released IMGT/HLA data into Neo4j using a scheduled Lambda which watches the source data repository and invokes the build and load processes when it detects a new IMGT/HLA version. The pipeline consists of a Step Functions state machine which orchestrates two basic processes: build and load. The build process employs a Batch job which produces an intermediate set of CSV files. The load process leverages SSM Run Command to copy the CSV files to the Neo4j server and execute Cypher statements directly on the server (server-side loading). When loading the full dataset of 35,000+ alleles, the build step will generally take around 15 minutes, however the load step can take an hour or more.
+The data pipeline layer automates ingestion and loading of newly released IMGT/HLA data into Neo4j using a scheduled Lambda which watches the source data repository and invokes the build and load processes when it detects a new IMGT/HLA version. The pipeline consists of a Step Functions state machine which orchestrates two basic processes: build and load. The build process employs a Batch job which produces an intermediate set of CSV files. The load process leverages SSM Run Command to copy the CSV files to the Neo4j server and execute Cypher statements directly on the server (server-side loading). When loading the full dataset of 35,000+ alleles, the build step will generally take around 15 minutes, however the load step can take an hour or more.
 
 ## Deployment
 Follow the steps to build and deploy the application to AWS.
 
 ### Quick Start
 This list outlines the basic steps for deployment. For more details please see the following sections.
-1. [Install prerequisites](#Prerequisites)
-2. [Set environment variables](#environment-variables)
-3. Check the config JSONs (parameters and state) and edit the values as desired
-4. Run `make deploy` to deploy the stacks to AWS
-5. Run `make database.load release=<version>` to load the Neo4j
-6. Run `make get.neo4j` to get the URL for the Neo4j browser
+1. [Install prerequisites](#Prerequisites).
+2. [Set environment variables](#environment-variables).
+3. Check the config JSONs (parameters and state) and edit the values as desired.
+4. Run `make deploy` to deploy the stacks to AWS.
+5. Run `make database.load release=<version>` to load Neo4j.
+6. Run `make database.get-credentials` to get the password for Neo4j.
+7. Navigate to the Neo4j browser at `https://<your domain>:7473/browser/`
 
 ### Prerequisites
 Please refer to the respective documentation for specific installation instructions.
@@ -143,26 +144,20 @@ For more information visit the documentation page:
 [Configuration and credential file settings](https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-files.html)
 
 #### Shell Variables
-These variables must be present in the shell environment before running Make. The best way to set these variables is with a `.env` file following these steps.
-1. Create a `.env` file in the project root and add the values.
+These variables must be present in the shell environment before running Make. The best way to set these variables is with a `.env` file following this schema.
 ```bash
-STAGE=<dev or prod>
+STAGE=prod
 APP_NAME=gfe-db
-REGION=<AWS region>
+REGION=us-east-1
 GITHUB_PERSONAL_ACCESS_TOKEN=<secret>
-HOST_DOMAIN=<fqdn>
+ROOT_DOMAIN=<domain>
+SUBDOMAIN=gfe-db
 ADMIN_EMAIL=<email>
+APOC_VERSION=4.4.0.3
+GDS_VERSION=2.0.1
+NEO4J_AMI_ID=<AMI id>
 ```
-
-2. Source the variables to the environment.
-```bash
-# Export .env file variables
-set -a && source .env && set +a
-
-# Check that the variables were set
-env
-```
-*Important:* *Always use a `.env` file or AWS SSM Parameter Store or Secrets Manager for sensitive variables like credentials and API keys. Never hard-code them, including when developing. AWS will quarantine an account if any credentials get accidentally exposed and this will cause problems. Make sure to update `.gitignore` to avoid pushing sensitive data to public repositories.
+***Important**:* *Always use a `.env` file or AWS SSM Parameter Store or Secrets Manager for sensitive variables like credentials and API keys. Never hard-code them, including when developing. AWS will quarantine an account if any credentials get accidentally exposed and this will cause problems. Make sure to update `.gitignore` to avoid pushing sensitive data to public repositories.*
 
 ### Makefile Usage
 Once an AWS profile is configured and environment variables are exported, the application can be deployed using `make`.
@@ -175,7 +170,7 @@ It is also possible to deploy or update individual services.
 make deploy.infrastructure
 
 # Deploy/update only the database service
-make deploy.database
+make database.deploy
 
 # Deploy/update only the pipeline service
 make deploy.pipeline
@@ -189,7 +184,7 @@ To see a list of possible commands using Make, run `make` on the command line.
 make deploy
 
 # Deploy config files and scripts to S3
-make deploy.config
+make config.deploy
 
 # Run the StepFunctions State Machine to load Neo4j
 make database.load releases=<version> align=<boolean> kir=<boolean> limit=<int>
@@ -229,7 +224,7 @@ For instructions on how to create a token, please see [Creating a personal acces
 ## Managing Configuration
 Configuring is managed using JSON files, SSM Parameter Store, Secrets Manager, and shell variables. To deploy changes in these files, run the command.
 ```bash
-make deploy.config
+make config.deploy
 ```
 
 ### Database Config
@@ -560,5 +555,5 @@ jupyter kernelspec uninstall gfe-db
 -----------------
 <br>
 <p align="center">
-  <img src="https://bethematch.org/content/site/images/btm_logo.png" alt="Be The Match>
+  <img src="https://bethematch.org/content/site/images/btm_logo.png" alt="Be The Match">
 </p>
