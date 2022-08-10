@@ -2,29 +2,30 @@
 # TODO check environment before proceeding
 
 SERVICE := database
-EC2_KEY_PAIR_NAME := $${STAGE}-$${APP_NAME}-$${REGION}-neo4j-key
-HOST_DOMAIN ?= "$${SUBDOMAIN}.$${ROOT_DOMAIN}"
-HOSTED_ZONE_ID ?= $(shell aws route53 list-hosted-zones | \
-	jq -c '.HostedZones[] | \
-	select(.Name | contains("${ROOT_DOMAIN}")).Id' | \
-	sed "s/\/hostedzone\///g")
+EC2_KEY_PAIR_NAME := ${STAGE}-${APP_NAME}-${REGION}-neo4j-key
+# ROOT_DOMAIN := $(shell cut -d'.' -f2,3 <<<"${HOST_DOMAIN}")
+HOSTED_ZONE_ID ?= $(shell aws route53 list-hosted-zones | jq -c '.HostedZones[] | select(.Name=="$(shell cut -d'.' -f2,3 <<<"${HOST_DOMAIN}").").Id' | sed "s/\/hostedzone\///g")
+
 
 target:
 	$(info ${HELP_MESSAGE})
 	@exit 0
 
-# TODO remove testing targets for deployment
-test:
-	@echo ${HOST_DOMAIN}
-	@echo ${HOSTED_ZONE_ID}
+# Validates that a Route53 hosted zone exists for the host domain
+env.check:
+ifeq ($(HOST_DOMAIN),$(HOST_DOMAIN))
+ifeq ($(HOSTED_ZONE_ID),) 
+$(error Could not find HostedZoneId for ${HOST_DOMAIN}. Please check your host domain is registered with Route53)
+else
+	@echo "Found hosted zone with id ${HOSTED_ZONE_ID} for ${HOST_DOMAIN}"
+endif
+endif
 
-deploy:
+deploy: env.check
 	@echo "$$(gdate -u +'%Y-%m-%d %H:%M:%S.%3N') - Deploying ${SERVICE} service" 2>&1 | tee -a $$CFN_LOG_PATH
 	$(MAKE) database.check-key-pair
 	$(MAKE) config.deploy
 	$(MAKE) database.deploy
-	# Won't copy most recent logs if database is still initializing
-	# $(MAKE) deploy.copy-s3-logs
 
 database.check-key-pair: ##=> Checks if the key pair already exists and creates it if it does not
 	@echo "$$(gdate -u +'%Y-%m-%d %H:%M:%S.%3N') - Checking for key pair ${EC2_KEY_PAIR_NAME}" 2>&1 | tee -a $$CFN_LOG_PATH

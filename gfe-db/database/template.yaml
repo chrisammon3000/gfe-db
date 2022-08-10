@@ -14,11 +14,12 @@ Parameters:
   Neo4jAmiId:
     Type: String #AWS::EC2::Image::Id
     # Default: ami-0e1324ddfc4d086bb
-    Description: AMI ID for Neo4j Community edition from AWS Marketplace
+    Description: AMI ID for Bitnami Neo4j Community edition from AWS Marketplace
   DatabaseVolumeSize:
     Type: String
   HostDomain:
     Type: String
+    AllowedPattern: '^[a-z0-9-]+\.[a-z0-9-]+\.[a-z]+$'
   HostedZoneId:
     Type: String
   AdminEmail:
@@ -28,10 +29,18 @@ Parameters:
   GDSVersion:
     Type: String
 
+Conditions:
+  UseDnsHost: !Not
+    - !Equals
+      - !Ref HostedZoneId
+      - ""
+
 Resources:
 
+  # Only created if HostedZoneId is not empty string ""
   Neo4jDNSRecord:
     Type: AWS::Route53::RecordSet
+    Condition: UseDnsHost
     Properties:
       HostedZoneId: !Ref HostedZoneId
       Comment: !Sub 'DNS name for ${AppName} server'

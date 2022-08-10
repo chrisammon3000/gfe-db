@@ -9,8 +9,8 @@
 # APP_NAME=gfe-db
 # REGION=us-east-1
 # GITHUB_PERSONAL_ACCESS_TOKEN=<token>
-# ROOT_DOMAIN=example.com
-# SUBDOMAIN=gfe-db
+# ROOT_DOMAIN=example.com <== Not required if only using Elastic IP for hosting
+# SUBDOMAIN=gfe-db <== Not required if only using Elastic IP for hosting
 # ADMIN_EMAIL=<email>
 # APOC_VERSION=4.4.0.3
 # GDS_VERSION=2.0.1
@@ -58,7 +58,7 @@ target:
 	@exit 0
 
 # TODO: Update email and name for Submitter node
-deploy: logs.purge check.env ##=> Deploy services
+deploy: env.check logs.purge ##=> Deploy services
 	@echo "$$(gdate -u +'%Y-%m-%d %H:%M:%S.%3N') - Deploying ${APP_NAME} to ${AWS_ACCOUNT}" 2>&1 | tee -a ${CFN_LOG_PATH}
 	$(MAKE) infrastructure.deploy
 	$(MAKE) database.deploy
@@ -76,18 +76,15 @@ logs.dirs:
 		"${LOGS_DIR}/pipeline/load" \
 		"${LOGS_DIR}/database/bootstrap" || true
 
-check.env: dependencies.check
+env.check: dependencies.check
 ifndef AWS_PROFILE
 $(error AWS_PROFILE is not set. Please select an AWS profile to use.)
 endif
 ifndef GITHUB_PERSONAL_ACCESS_TOKEN
 $(error GITHUB_PERSONAL_ACCESS_TOKEN is not set.)
 endif
-ifndef ROOT_DOMAIN
-$(error ROOT_DOMAIN is not set.)
-endif
-ifndef SUBDOMAIN
-$(error SUBDOMAIN is not set.)
+ifndef HOST_DOMAIN
+$(info HOST_DOMAIN is not set, hosting will use Elastic IP.)
 endif
 ifndef ADMIN_EMAIL
 $(error ADMIN_EMAIL is not set.)
