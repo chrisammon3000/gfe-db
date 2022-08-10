@@ -177,7 +177,8 @@ Resources:
             --stack  ${Stage}-${AppName}-database \
             --resource Neo4jDatabaseInstance \
             --region ${AWS::Region}
-          # Bootstrap Neo4j 
+          # Bootstrap Neo4j
+          mv $NEO4J_HOME/conf/neo4j.conf $NEO4J_HOME/conf/neo4j-bitnami.conf.bkp
           # cd $BITNAMI_HOME && make neo4j
       Tags:
         - Key: Name

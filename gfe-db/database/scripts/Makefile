@@ -114,10 +114,13 @@ eip.waiter:
 	@bash ${ROOT_DIR}/init/eip_assoc_waiter.sh
 
 # secretsmanager
+# TODO notify SNS of error
 neo4j.publish-credentials:
-	@aws --region ${REGION} secretsmanager update-secret \
+	@response=$$(aws --region ${REGION} secretsmanager update-secret \
 		--secret-id ${NEO4J_CREDENTIALS_SECRET_ARN} \
-		--secret-string "{\"NEO4J_USERNAME\":\"${NEO4J_USERNAME}\",\"NEO4J_PASSWORD\":\"${NEO4J_PASSWORD}\"}"
+		--secret-string "{\"NEO4J_USERNAME\":\"${NEO4J_USERNAME}\",\"NEO4J_PASSWORD\":\"${NEO4J_PASSWORD}\"}" | \
+	jq 'has("VersionId")') && \
+	[ "$$response" =  "true" ] && echo "Published Neo4j credentials to Secrets Manager" || echo "Failed to publish credentials"
 
 # neo4j
 neo4j.status:
@@ -138,7 +141,8 @@ neo4j.restart:
 neo4j.config.update:
 	@mv ${NEO4J_HOME}/conf/neo4j.conf ${NEO4J_HOME}/conf/neo4j.conf.bkp
 	@echo "Downloading Neo4j configuration from ${DATA_BUCKET_NAME}"
-	@aws s3 cp s3://${DATA_BUCKET_NAME}/config/neo4j/neo4j.conf ${NEO4J_HOME}/conf/neo4j.conf
+	@[ "${HOST_DOMAIN}" =  "" ] && aws s3 cp s3://${DATA_BUCKET_NAME}/config/neo4j/neo4j-eip.conf ${NEO4J_HOME}/conf/neo4j.conf || \
+			aws s3 cp s3://${DATA_BUCKET_NAME}/config/neo4j/neo4j-dns.conf ${NEO4J_HOME}/conf/neo4j.conf
 
 neo4j.plugins.install-apoc:
 	@echo "Downloading APOC Full plugin..."
