@@ -3,25 +3,26 @@
 
 SERVICE := database
 EC2_KEY_PAIR_NAME := ${STAGE}-${APP_NAME}-${REGION}-neo4j-key
-# ROOT_DOMAIN := $(shell cut -d'.' -f2,3 <<<"${HOST_DOMAIN}")
 HOSTED_ZONE_ID ?= $(shell aws route53 list-hosted-zones | jq -c '.HostedZones[] | select(.Name=="$(shell cut -d'.' -f2,3 <<<"${HOST_DOMAIN}").").Id' | sed "s/\/hostedzone\///g")
 
-
-target:
-	$(info ${HELP_MESSAGE})
-	@exit 0
-
 # Validates that a Route53 hosted zone exists for the host domain
-env.check:
-ifeq ($(HOST_DOMAIN),$(HOST_DOMAIN))
+ifneq ($(HOST_DOMAIN),)
 ifeq ($(HOSTED_ZONE_ID),) 
-$(error Could not find HostedZoneId for ${HOST_DOMAIN}. Please check your host domain is registered with Route53)
+$(error Could not find HostedZoneId. Please check your host domain is registered with Route53)
 else
 	@echo "Found hosted zone with id ${HOSTED_ZONE_ID} for ${HOST_DOMAIN}"
 endif
 endif
 
-deploy: env.check
+target:
+	$(info ${HELP_MESSAGE})
+	@exit 0
+
+test:
+	@echo ${HOST_DOMAIN}
+	@echo "finish"
+
+deploy:
 	@echo "$$(gdate -u +'%Y-%m-%d %H:%M:%S.%3N') - Deploying ${SERVICE} service" 2>&1 | tee -a $$CFN_LOG_PATH
 	$(MAKE) database.check-key-pair
 	$(MAKE) config.deploy

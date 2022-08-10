@@ -19,7 +19,7 @@ Parameters:
     Type: String
   HostDomain:
     Type: String
-    AllowedPattern: '^[a-z0-9-]+\.[a-z0-9-]+\.[a-z]+$'
+    AllowedPattern: '((^[a-z0-9-]{1,}\.[a-z0-9-]{1,}\.[a-z]{1,}$)|^$)'
   HostedZoneId:
     Type: String
   AdminEmail:
@@ -178,7 +178,7 @@ Resources:
             --resource Neo4jDatabaseInstance \
             --region ${AWS::Region}
           # Bootstrap Neo4j 
-          cd $BITNAMI_HOME && make neo4j
+          # cd $BITNAMI_HOME && make neo4j
       Tags:
         - Key: Name
           Value: !Sub '${AppName}-${Stage}'

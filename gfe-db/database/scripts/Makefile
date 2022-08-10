@@ -17,14 +17,15 @@ target:
 env:
 	@printenv
 
+test:
+	@echo ${HOST_DOMAIN}
+
 # TODO fetch all shell scripts from S3
 # get.scripts:
 # get.cypher:
 get.data: #=> Download the build data locally; get.data release=3470
 	@[ -z "$$release" ] && aws s3 cp --recursive s3://${DATA_BUCKET_NAME}/data/$$release/csv/ ${NEO4J_HOME}/import/ || echo "No release argument"
-# env.fetch:
 
-env.check:
 ifndef DATA_BUCKET_NAME
 $(error DATA_BUCKET_NAME is not set.)
 endif
@@ -38,7 +39,7 @@ ifndef NEO4J_PASSWORD
 $(error NEO4J_HOME is not set.)
 endif
 ifndef HOST_DOMAIN
-$(error HOST_DOMAIN is not set.)
+$(info HOST_DOMAIN is not set, hosting will use Elastic IP.)
 endif
 ifndef ADMIN_EMAIL
 $(error ADMIN_EMAIL is not set.)
@@ -49,7 +50,6 @@ endif
 ifndef GDS_VERSION
 $(error GDS_VERSION is not set.)
 endif
-	@echo "$$(gdate -u +'%Y-%m-%d %H:%M:%S.%3N') - Found environment variables" 2>&1
 
 # # TODO add dependency checks
 # deps.check:
@@ -193,7 +193,7 @@ neo4j.drop-constraints:
 	@cat ${NEO4J_HOME}/cypher/drop_constraints.cyp | cypher-shell -u ${NEO4J_USERNAME} -p ${NEO4J_PASSWORD} -a neo4j+s://${HOST_DOMAIN}:7687
 
 ssl.create-cert:
-	@bash init/create_cert.sh ${HOST_DOMAIN} ${ADMIN_EMAIL}
+	@[ "${HOST_DOMAIN}" =  "" ] && echo "Skipping SSL certificate because there is no host domain" || bash init/create_cert.sh ${HOST_DOMAIN} ${ADMIN_EMAIL}
 
 copy-logs:
 	@echo "Copying logs to S3..."

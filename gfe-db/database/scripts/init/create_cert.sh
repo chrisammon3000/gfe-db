@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/bash -x
 
 # Part of user data, to be run on the database instance on initialization, or later for renewal
 
@@ -8,6 +8,18 @@ export NEO4J_HOME=/opt/bitnami/neo4j
 # Passed from command line
 HOST_DOMAIN=$1
 ADMIN_EMAIL=$2
+
+if [[ -z $HOST_DOMAIN ]]; then
+    echo "$(date -u +'%Y-%m-%d %H:%M:%S.%3N') - No host domain found"
+    exit 0
+else
+    echo "$(date -u +'%Y-%m-%d %H:%M:%S.%3N') - Found host domain $HOST_DOMAIN"
+fi
+
+if [[ -z $ADMIN_EMAIL ]]; then
+    echo "$(date -u +'%Y-%m-%d %H:%M:%S.%3N') - No email found"
+    exit 1
+fi
 
 certbot certonly -n \
   -d $HOST_DOMAIN \

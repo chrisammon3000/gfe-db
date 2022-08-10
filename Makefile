@@ -89,7 +89,7 @@ endif
 ifndef ADMIN_EMAIL
 $(error ADMIN_EMAIL is not set.)
 endif
-	@echo "$$(gdate -u +'%Y-%m-%d %H:%M:%S.%3N') - Found environment variables" 2>&1 | tee -a ${CFN_LOG_PATH}
+	# @echo "$$(gdate -u +'%Y-%m-%d %H:%M:%S.%3N') - Found environment variables" 2>&1 | tee -a ${CFN_LOG_PATH}
 
 dependencies.check:
 	$(MAKE) dependencies.check.docker
