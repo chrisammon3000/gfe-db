@@ -137,12 +137,9 @@ neo4j.restart:
 	@/opt/bitnami/ctlscript.sh restart
 	$(MAKE) neo4j.waiter
 
-# TODO add "-dns" flag to S3 neo4j.conf if using custom hosting
 neo4j.config.update:
-	@mv ${NEO4J_HOME}/conf/neo4j.conf ${NEO4J_HOME}/conf/neo4j.conf.bkp
 	@echo "Downloading Neo4j configuration from ${DATA_BUCKET_NAME}"
-	@[ "${HOST_DOMAIN}" =  "" ] && aws s3 cp s3://${DATA_BUCKET_NAME}/config/neo4j/neo4j-eip.conf ${NEO4J_HOME}/conf/neo4j.conf || \
-			aws s3 cp s3://${DATA_BUCKET_NAME}/config/neo4j/neo4j-dns.conf ${NEO4J_HOME}/conf/neo4j.conf
+	@aws s3 cp s3://${DATA_BUCKET_NAME}/config/neo4j/neo4j.conf ${NEO4J_HOME}/conf/neo4j.conf
 
 neo4j.plugins.install-apoc:
 	@echo "Downloading APOC Full plugin..."

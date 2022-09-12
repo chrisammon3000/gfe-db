@@ -19,7 +19,7 @@ Parameters:
     Type: String
   HostDomain:
     Type: String
-    AllowedPattern: '((^[a-z0-9-]{1,}\.[a-z0-9-]{1,}\.[a-z]{1,}$)|^$)'
+    AllowedPattern: '((^[a-z0-9-]{1,}\.[a-z]{1,}$)|^$)'
   HostedZoneId:
     Type: String
   AdminEmail:
@@ -44,7 +44,7 @@ Resources:
     Properties:
       HostedZoneId: !Ref HostedZoneId
       Comment: !Sub 'DNS name for ${AppName} server'
-      Name: !Ref HostDomain
+      Name: !Sub ${AppName}.${HostDomain}.
       Type: A
       TTL: 300
       ResourceRecords:
@@ -141,6 +141,7 @@ Resources:
           certbot \
           git
           export BITNAMI_HOME=/home/bitnami
+          export NEO4J_HOME=/opt/bitnami/neo4j
           # CloudWatch Logs Agent
           mkdir -p /tmp/amazon-cloudwatch-agent
           wget -q -O /tmp/amazon-cloudwatch-agent/amazon-cloudwatch-agent.deb https://s3.amazonaws.com/amazoncloudwatch-agent/debian/amd64/latest/amazon-cloudwatch-agent.deb
@@ -167,7 +168,7 @@ Resources:
           echo "ADMIN_EMAIL=${AdminEmail}" >> $BITNAMI_HOME/env.sh
           echo "APOC_VERSION=${APOCVersion}" >> $BITNAMI_HOME/env.sh
           echo "GDS_VERSION=${GDSVersion}" >> $BITNAMI_HOME/env.sh
-          echo "NEO4J_HOME=/opt/bitnami/neo4j" >> $BITNAMI_HOME/env.sh
+          echo $NEO4J_HOME >> $BITNAMI_HOME/env.sh
           echo "NEO4J_CREDENTIALS_SECRET_ARN=${Neo4jCredentialsSecret}" >> $BITNAMI_HOME/env.sh
           # Download Makefile from data bucket
           aws s3 cp --recursive s3://${DataBucketName}/config/scripts/ $BITNAMI_HOME/
