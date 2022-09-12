@@ -9,17 +9,15 @@
 # APP_NAME=gfe-db
 # REGION=us-east-1
 # GITHUB_PERSONAL_ACCESS_TOKEN=<token>
-# ROOT_DOMAIN=example.com <== Not required if only using Elastic IP for hosting
-# SUBDOMAIN=gfe-db <== Not required if only using Elastic IP for hosting
+# HOST_DOMIN=example.com <== Not required if only using Elastic IP for hosting
 # ADMIN_EMAIL=<email>
 # APOC_VERSION=4.4.0.3
 # GDS_VERSION=2.0.1
-# NEO4J_AMI_ID=ami-04aa5da301f99bf58 <== requires AWS Marketplace Subscription
+# NEO4J_AMI_ID=ami-04aa5da301f99bf58 <== requires AWS Marketplace Subscription (us-east-1)
 
 include .env
 export
 
-# TODO: Application Configuration, can move to JSON
 export ROOT_DIR ?= $(shell pwd)
 export DATABASE_DIR ?= ${ROOT_DIR}/${APP_NAME}/database
 export LOGS_DIR ?= $(shell echo "${ROOT_DIR}/logs")
@@ -36,6 +34,11 @@ export AWS_ACCOUNT ?= $(shell aws sts get-caller-identity --query Account --outp
 export DATA_BUCKET_NAME ?= ${STAGE}-${APP_NAME}-${AWS_ACCOUNT}-${REGION}
 export ECR_BASE_URI ?= ${AWS_ACCOUNT}.dkr.ecr.${REGION}.amazonaws.com
 export BUILD_REPOSITORY ?= ${STAGE}-${APP_NAME}-build-service
+export HOSTED_ZONE_ID ?= $(shell aws route53 list-hosted-zones | \
+	jq -c \
+	--arg HOST_DOMAIN "${HOST_DOMAIN}." \
+	'.HostedZones[] | select(.Name==$$HOST_DOMAIN).Id' \
+	| sed "s/\/hostedzone\///g")
 
 # TODO move to database layer
 export INSTANCE_ID ?= $(shell aws ssm get-parameters \
@@ -58,7 +61,7 @@ target:
 	@exit 0
 
 # TODO: Update email and name for Submitter node
-deploy: env.check logs.purge ##=> Deploy services
+deploy: env.check.log logs.purge ##=> Deploy services
 	@echo "$$(gdate -u +'%Y-%m-%d %H:%M:%S.%3N') - Deploying ${APP_NAME} to ${AWS_ACCOUNT}" 2>&1 | tee -a ${CFN_LOG_PATH}
 	$(MAKE) infrastructure.deploy
 	$(MAKE) database.deploy
@@ -85,11 +88,21 @@ $(error GITHUB_PERSONAL_ACCESS_TOKEN is not set.)
 endif
 ifndef HOST_DOMAIN
 $(info HOST_DOMAIN is not set, hosting will use Elastic IP.)
+ifneq ($(HOST_DOMAIN),)
+ifeq ($(HOSTED_ZONE_ID),) 
+$(error Could not find HostedZoneId. Please check your host domain is registered with Route53)
+else
+$(info Found hosted zone with id ${HOSTED_ZONE_ID} for ${HOST_DOMAIN})
+endif
+endif
 endif
 ifndef ADMIN_EMAIL
 $(error ADMIN_EMAIL is not set.)
 endif
-	# @echo "$$(gdate -u +'%Y-%m-%d %H:%M:%S.%3N') - Found environment variables" 2>&1 | tee -a ${CFN_LOG_PATH}
+
+env.check.log: env.check
+	@echo "$$(gdate -u +'%Y-%m-%d %H:%M:%S.%3N') - Found environment variables" 2>&1 | tee -a ${CFN_LOG_PATH}
+
 
 dependencies.check:
 	$(MAKE) dependencies.check.docker
@@ -138,6 +151,9 @@ pipeline.deploy:
 config.deploy:
 	$(MAKE) -C ${APP_NAME}/pipeline/ config.deploy
 	$(MAKE) -C ${APP_NAME}/database/ config.deploy
+
+config.update-dns:
+	$(MAKE) -C ${APP_NAME}/database/ config.update-dns
 
 database.test:
 	$(MAKE) -C ${APP_NAME}/database/ test

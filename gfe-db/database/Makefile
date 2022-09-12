@@ -1,26 +1,13 @@
-# TODO: add brackets to environment variables passed from root Makefile
-# TODO check environment before proceeding
-
 SERVICE := database
 EC2_KEY_PAIR_NAME := ${STAGE}-${APP_NAME}-${REGION}-neo4j-key
-HOSTED_ZONE_ID ?= $(shell aws route53 list-hosted-zones | jq -c '.HostedZones[] | select(.Name=="$(shell cut -d'.' -f2,3 <<<"${HOST_DOMAIN}").").Id' | sed "s/\/hostedzone\///g")
 
-# Validates that a Route53 hosted zone exists for the host domain
-ifneq ($(HOST_DOMAIN),)
-ifeq ($(HOSTED_ZONE_ID),) 
-$(error Could not find HostedZoneId. Please check your host domain is registered with Route53)
-else
-	@echo "Found hosted zone with id ${HOSTED_ZONE_ID} for ${HOST_DOMAIN}"
-endif
-endif
+test:
+	@echo ${HOST_DOMAIN}
+	@echo ${HOSTED_ZONE_ID}
 
 target:
 	$(info ${HELP_MESSAGE})
 	@exit 0
-
-test:
-	@echo ${HOST_DOMAIN}
-	@echo "finish"
 
 deploy:
 	@echo "$$(gdate -u +'%Y-%m-%d %H:%M:%S.%3N') - Deploying ${SERVICE} service" 2>&1 | tee -a $$CFN_LOG_PATH
@@ -42,9 +29,16 @@ database.check-key-pair: ##=> Checks if the key pair already exists and creates 
 
 config.deploy: config.neo4j config.scripts config.cloudwatch-agent
 
-# TODO: use sed to replace dbms.default_advertised_address=<FQDN> with HOST_DOMAIN
-config.neo4j:
+config.neo4j: config.update-dns
 	@aws s3 cp --recursive neo4j/ s3://$$DATA_BUCKET_NAME/config/neo4j/ 2>&1 | tee -a $$CFN_LOG_PATH
+
+# TODO test and validate
+# Neo4j uses neo4j-dns.conf if HOST_DOMAIN is set, otherwise it uses neo4j-eip.conf
+config.update-dns:
+	@[ "${HOST_DOMAIN}" != "" ] && \
+	cat neo4j/neo4j-dns.tmp | \
+	sed s"/# dbms.default_advertised_address=.*/dbms.default_advertised_address=${APP_NAME}.${HOST_DOMAIN}/" > neo4j/neo4j.conf || \
+	cat neo4j/neo4j-eip.tmp > neo4j.conf
 
 config.scripts:
 	@script_s3_path=s3://$$DATA_BUCKET_NAME/config/scripts/ && \
