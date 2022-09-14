@@ -69,7 +69,7 @@ following these steps.
 
    STAGE=<dev or prod>
    APP_NAME=gfe-db
-   AWS_REGION=<AWS region>
+   REGION=<AWS region>
    NEO4J_USERNAME=<secret>
    NEO4J_PASSWORD=<secret>
    GITHUB_PERSONAL_ACCESS_TOKEN=<secret>

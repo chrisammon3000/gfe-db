@@ -1,4 +1,4 @@
-#!/bin/bash -x
+#!/bin/bash
 
 # This script sends heartbeats back to the StepFunctions API during the task execution.
 
@@ -7,7 +7,7 @@ do
     echo "$(date -u +'%Y-%m-%d %H:%M:%S.%3N') - Sending task heartbeat"
     aws stepfunctions send-task-heartbeat \
         --task-token "$TASK_TOKEN" \
-        --region $AWS_REGION
+        --region $REGION
 
     # Send TaskSuccess token to StepFunctions
     if [[ $? != "0" ]]; then

@@ -100,11 +100,7 @@ packaged.yaml
 samconfig.toml
 _*.*
 _reference/
-_deprecated/
 _docs/
 _debug*/
 _dev*
 .github/_*
-payload.json
-response.json
-neo4j.conf
