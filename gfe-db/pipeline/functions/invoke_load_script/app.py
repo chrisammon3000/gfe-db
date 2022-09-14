@@ -14,7 +14,7 @@ load_neo4j_activity = os.environ["LOAD_NEO4J_ACTIVITY"]
 app_name = os.environ["APP_NAME"]
 
 # Get SSM Document Neo4jLoadQuery
-ssm = boto3.client('ssm', region_name=os.environ["AWS_REGION"])
+ssm = boto3.client('ssm')
 response = ssm.get_document(Name=neo4j_load_query_document_name)
 neo4j_load_query_document_content = json.loads(response["Content"])
 
@@ -67,10 +67,7 @@ def lambda_handler(event, context):
                 "commandLine":[cmd],
                 "sourceInfo":[json.dumps(source_info_default)]
             },
-            MaxConcurrency='1',
-            CloudWatchOutputConfig={
-                'CloudWatchOutputEnabled': True
-            })
+            MaxConcurrency='1')
 
         if response['ResponseMetadata']['HTTPStatusCode'] != 200:
             logger.error(json.dumps(response, cls=DatetimeEncoder))

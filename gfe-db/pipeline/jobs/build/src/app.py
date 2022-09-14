@@ -34,7 +34,7 @@ logging.basicConfig(
         logging.StreamHandler()
         ])
 
-region = os.environ["AWS_REGION"]
+region = os.environ["REGION"]
 failed_alleles_queue = os.environ["FAILED_ALLELES_QUEUE"]
 failed_alleles_queue_name = failed_alleles_queue.split("/")[-1]
 
