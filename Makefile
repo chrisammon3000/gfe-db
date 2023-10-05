@@ -43,7 +43,11 @@ REQUIRED_VARS := STAGE APP_NAME AWS_ACCOUNT AWS_REGION AWS_PROFILE SUBSCRIBE_EMA
                  GITHUB_REPOSITORY_OWNER GITHUB_REPOSITORY_NAME GITHUB_PERSONAL_ACCESS_TOKEN \
                  HOST_DOMAIN SUBDOMAIN ADMIN_EMAIL NEO4J_AMI_ID APOC_VERSION GDS_VERSION
 
-# print colors
+# stdout colors
+# blue: runtime message, no action required
+# green: parameter value message, no action required
+# yellow: message to user, action required
+# red: error message, action required
 define blue
 	@tput setaf 4
 	@echo $1
@@ -89,7 +93,7 @@ env.print:
 	@echo "+---------------------------------------------------------------------------------+"
 	@echo "\033[0;33mPlease confirm the above values are correct.\033[0m"
 
-deploy: splash-screen logs.purge env.validate.stage env.validate ##=> Deploy all services
+deploy: splash-screen env.validate.stage env.validate ##=> Deploy all services
 	@echo "$$(gdate -u +'%Y-%m-%d %H:%M:%S.%3N') - Deploying ${APP_NAME} to ${AWS_ACCOUNT}" 2>&1 | tee -a ${CFN_LOG_PATH}
 	$(MAKE) env.print
 	@echo "Deploy stack to the \`${STAGE}\` environment? [y/N] \c " && read ans && [ $${ans:-N} = y ]
@@ -97,11 +101,6 @@ deploy: splash-screen logs.purge env.validate.stage env.validate ##=> Deploy all
 	$(MAKE) database.deploy
 	$(MAKE) pipeline.deploy
 	@echo "$$(gdate -u +'%Y-%m-%d %H:%M:%S.%3N') - Finished deploying ${APP_NAME}" 2>&1 | tee -a ${CFN_LOG_PATH}
-
-logs.purge: logs.dirs
-ifeq ($(PURGE_LOGS),true)
-	@rm ${LOGS_DIR}/cfn/*.txt
-endif
 
 logs.dirs:
 	@mkdir -p "${LOGS_DIR}/cfn" \
