@@ -182,23 +182,31 @@ ifdef PUBLIC_SUBNET_ID
 	$(eval export SUBNET_ID := ${PUBLIC_SUBNET_ID})
 endif
 
-env.validate.private-subnet:
+env.validate.use-private-subnet:
 ifdef USE_PRIVATE_SUBNET
 	$(call green, "USE_PRIVATE_SUBNET is set to ${USE_PRIVATE_SUBNET}")
 else
-	$(call green, "USE_PRIVATE_SUBNET is not set. Defaulting to false")
+	$(call green, "USE_PRIVATE_SUBNET is not set. Deployment will use a public subnet as default.")
 	$(eval export USE_PRIVATE_SUBNET := false)
 endif
 
 env.validate.vpc:
 ifdef VPC_ID
-	$(call green, 'VPC_ID' is set. Using existing VPC: $(VPC_ID))
+	$(call green, VPC_ID is set. Using existing VPC: $(VPC_ID))
 	$(eval export CREATE_VPC := false)
 	$(MAKE) env.validate.subnets
 else
-	$(call green, 'VPC_ID' is not set. Creating new VPC)
+ifdef PRIVATE_SUBNET_ID
+	$(call red, PRIVATE_SUBNET_ID is set but VPC_ID is not set. Please set VPC_ID or unset PRIVATE_SUBNET_ID.)
+	@exit 1
+endif
+ifdef PUBLIC_SUBNET_ID
+	$(call red, PUBLIC_SUBNET_ID is set but VPC_ID is not set. Please set VPC_ID or unset PUBLIC_SUBNET_ID.)
+	@exit 1
+endif
+	$(call green, VPC_ID is not set. Creating new VPC.)
 	$(eval export CREATE_VPC := true)
-	$(MAKE) env.validate.private-subnet
+	$(MAKE) env.validate.use-private-subnet
 endif
 
 env.validate: check.dependencies env.validate.stage
