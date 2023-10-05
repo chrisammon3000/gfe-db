@@ -41,7 +41,7 @@ export FUNCTIONS_PATH := ${APP_NAME}/pipeline/functions
 # Required environment variables
 REQUIRED_VARS := STAGE APP_NAME AWS_ACCOUNT AWS_REGION AWS_PROFILE SUBSCRIBE_EMAILS \
                  GITHUB_REPOSITORY_OWNER GITHUB_REPOSITORY_NAME GITHUB_PERSONAL_ACCESS_TOKEN \
-                 HOST_DOMAIN SUBDOMAIN ADMIN_EMAIL NEO4J_AMI_ID APOC_VERSION GDS_VERSION
+                 ADMIN_EMAIL NEO4J_AMI_ID APOC_VERSION GDS_VERSION
 
 # stdout colors
 # blue: runtime message, no action required
@@ -93,13 +93,13 @@ env.print:
 	@echo "+---------------------------------------------------------------------------------+"
 	@echo "\033[0;33mPlease confirm the above values are correct.\033[0m"
 
-deploy: splash-screen env.validate.stage env.validate ##=> Deploy all services
+deploy: splash-screen env.validate ##=> Deploy all services
 	@echo "$$(gdate -u +'%Y-%m-%d %H:%M:%S.%3N') - Deploying ${APP_NAME} to ${AWS_ACCOUNT}" 2>&1 | tee -a ${CFN_LOG_PATH}
 	$(MAKE) env.print
 	@echo "Deploy stack to the \`${STAGE}\` environment? [y/N] \c " && read ans && [ $${ans:-N} = y ]
 	$(MAKE) infrastructure.deploy
-	$(MAKE) database.deploy
-	$(MAKE) pipeline.deploy
+	# $(MAKE) database.deploy
+	# $(MAKE) pipeline.deploy
 	@echo "$$(gdate -u +'%Y-%m-%d %H:%M:%S.%3N') - Finished deploying ${APP_NAME}" 2>&1 | tee -a ${CFN_LOG_PATH}
 
 logs.dirs:
@@ -143,6 +143,7 @@ check.dependencies.jq:
 	fi
 
 # TODO use cloudformation list-stacks as alternative to SSM parameter
+# Checks if the stage is already deployed
 env.validate.stage:
 	@res=$$(aws ssm get-parameters \
 		--names "/${APP_NAME}/${STAGE}/${AWS_REGION}/Stage" \
@@ -158,37 +159,52 @@ env.validate.stage:
 		echo "\033[0;31m**** Please refer to the documentation for a list of prerequisites. ****\033[0m" && \
 		exit 1; \
 	fi
-	
-env.validate.no-vpc:
-ifeq ($(VPC_ID),)
-	$(call red, "VPC_ID must be set as an environment variable when \`CREATE_VPC\` is false")
+
+# if VPC_ID is set, then one of PRIVATE_SUBNET_ID or PUBLIC_SUBNET_ID must be set
+env.validate.subnets:
+ifneq ($(and $(PRIVATE_SUBNET_ID),$(PUBLIC_SUBNET_ID)),)
+	$(call red, "PRIVATE_SUBNET_ID and PUBLIC_SUBNET_ID cannot both be set")
 	@exit 1
-else
-	$(call green, "Found VPC_ID: ${VPC_ID}")
 endif
-ifeq ($(PUBLIC_SUBNET_ID),)
-	$(call red, "PUBLIC_SUBNET_ID must be set as an environment variable when \`CREATE_VPC\` is false")
+ifdef PRIVATE_SUBNET_ID
+ifdef PUBLIC_SUBNET_ID
+	$(call red, "PRIVATE_SUBNET_ID and PUBLIC_SUBNET_ID cannot both be set")
 	@exit 1
 else
+	$(call green, "Found PRIVATE_SUBNET_ID: ${PRIVATE_SUBNET_ID}")
+	$(eval export USE_PRIVATE_SUBNET := true)
+	$(eval export SUBNET_ID := ${PRIVATE_SUBNET_ID})
+endif
+endif
+ifdef PUBLIC_SUBNET_ID
 	$(call green, "Found PUBLIC_SUBNET_ID: ${PUBLIC_SUBNET_ID}")
+	$(eval export USE_PRIVATE_SUBNET := false)
+	$(eval export SUBNET_ID := ${PUBLIC_SUBNET_ID})
 endif
 
-env.validate: check.dependencies
+env.validate.private-subnet:
+ifdef USE_PRIVATE_SUBNET
+	$(call green, "USE_PRIVATE_SUBNET is set to ${USE_PRIVATE_SUBNET}")
+else
+	$(call green, "USE_PRIVATE_SUBNET is not set. Defaulting to false")
+	$(eval export USE_PRIVATE_SUBNET := false)
+endif
+
+env.validate.vpc:
+ifdef VPC_ID
+	$(call green, 'VPC_ID' is set. Using existing VPC: $(VPC_ID))
+	$(eval export CREATE_VPC := false)
+	$(MAKE) env.validate.subnets
+else
+	$(call green, 'VPC_ID' is not set. Creating new VPC)
+	$(eval export CREATE_VPC := true)
+	$(MAKE) env.validate.private-subnet
+endif
+
+env.validate: check.dependencies env.validate.stage
 	$(foreach var,$(REQUIRED_VARS),\
 		$(if $(value $(var)),,$(error $(var) is not set. Please add $(var) to the environment variables.)))
-ifndef CREATE_VPC
-	$(info 'CREATE_VPC' is not set. Defaulting to 'false')
-	$(eval export CREATE_VPC := false)
-	$(call blue, "**** This deployment uses an existing VPC**** ")
-	$(MAKE) env.validate.no-vpc
-endif
-ifeq ($(CREATE_VPC),false)
-	$(call blue, "**** This deployment uses an existing VPC**** ")
-	$(MAKE) env.validate.no-vpc
-else ifeq ($(CREATE_VPC),true)
-	$(call blue, "**** This deployment includes a VPC**** ")
-endif
-	@echo "$$(gdate -u +'%Y-%m-%d %H:%M:%S.%3N') - Found environment variables" 2>&1 | tee -a ${CFN_LOG_PATH}
+	$(MAKE) env.validate.vpc
 
 infrastructure.deploy: 
 	$(MAKE) -C ${APP_NAME}/infrastructure/ deploy
