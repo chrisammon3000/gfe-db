@@ -9,29 +9,74 @@ Parameters:
     Type: String
   createVpc:
     Type: String
-    Default: 'false'
-    AllowedValues:
-      - 'true'
-      - 'false'
+  usePrivateSubnet:
+    Type: String
+  # Requires validation of existing VPC endpoint
+  createSsmVpcEndpoint:
+    Type: String
+  # Requires validation of existing VPC endpoint
+  createSecretsManagerVpcEndpoint:
+    Type: String
   AdminEmail:
     Type: String
   DataBucketName:
     Type: String
   VpcId:
     Type: String
-    Description: Required if createVpc is false
+    Description: Vpc ID if using an external VPC
     Default: ''
+    # AllowedPattern: 
   PublicSubnetId:
     Type: String
-    Description: Required if createVpc is false
+    Description: Required if VpcId is set
     Default: ''
+    # AllowedPattern: 
+  PrivateSubnetId:
+    Type: String
+    Description: Required if VpcId is set
+    Default: ''
+    # AllowedPattern: 
   GitHubPersonalAccessToken:
     Type: String
     NoEcho: true
   
 Conditions:
-  CreateVpc: !Equals [!Ref createVpc, 'true']
-  UseExternalVpc: !Equals [!Ref createVpc, 'false']
+
+  # Determines whether to create a VPC or use an existing VPC
+  CreateVpc: !Equals [ !Ref createVpc, "true" ]
+
+  # TODO update: createVpc is false and VpcId and PublicSubnetId are not empty
+  UseExistingVpc: !Equals [ !Ref createVpc, "false" ]
+
+  # Determines whether Neo4j will use a private or public subnet
+  UsePrivateSubnet: !Equals [ !Ref usePrivateSubnet, "true" ]
+  UsePublicSubnet: !Equals [ !Ref usePrivateSubnet, "false" ]
+
+  # Determines whether to create a VPC and use a private or public subnet for Neo4j
+  CreateAndUsePrivateSubnet: !And [ !Condition CreateVpc, !Condition UsePrivateSubnet ]
+  # CreateAndUsePublicSubnet: !And [ !Condition CreateVpc, !Condition UsePublicSubnet ] # A created or existing public subnet is always used for Batch
+  
+  # TODO update: PrivateSubnetId is not empty
+  UseExistingPrivateSubnet: !And [ !Condition UseExistingVpc, !Condition UsePrivateSubnet ]
+  # UseExistingPublicSubnet: !And [ !Condition UseExistingVpc, !Condition UsePublicSubnet ] # A created or existing public subnet is always used for Batch
+
+  # Determines how to create VPC endpoints for SSM and Secrets Manager, which also depends on whether they already exist
+  UseExistingPrivateSubnetWithSsmEndpoint: !Or
+    - !Condition CreateAndUsePrivateSubnet
+    - !And 
+      - !Condition UseExistingPrivateSubnet
+      - !Condition createSsmVpcEndpoint
+  UseExistingPrivateSubnetWithSecretsManagerEndpoint: !Or
+    - !Condition CreateAndUsePrivateSubnet
+    - !And 
+      - !Condition UseExistingPrivateSubnet
+      - !Condition createSecretsManagerVpcEndpoint
+  UseExistingPrivateSubnetWithVpcEndpoints: !Or
+    - !Condition CreateAndUsePrivateSubnet
+    - !And 
+      - !Condition UseExistingPrivateSubnet
+      - !Condition createSsmVpcEndpoint
+      - !Condition createSecretsManagerVpcEndpoint
 
 Mappings:
   # AvailabilityZoneMap defines availability zones where an m5d.xlarge instance is available (used for Neo4j server).
@@ -69,15 +114,23 @@ Resources:
       Description: "Name of application"
       Value: !Ref AppName
 
-  CreateVpcParameter:
-    Type: AWS::SSM::Parameter
-    Properties:
-      Type: String
-      Name: !Sub '/${AppName}/${Stage}/${AWS::Region}/CreateVpc'
-      Description: !Sub "True if stack creates a VPC, false if stack uses an existing VPC"
-      Value: !Ref createVpc
+  # CreateVpcParameter:
+  #   Type: AWS::SSM::Parameter
+  #   Properties:
+  #     Type: String
+  #     Name: !Sub '/${AppName}/${Stage}/${AWS::Region}/CreateVpcCondition'
+  #     Description: !Sub "True if stack creates a VPC, false if stack uses an existing VPC"
+  #     Value: !Ref createVpc
 
-  Vpc:
+  # UsePrivateSubnetParameter:
+  #   Type: AWS::SSM::Parameter
+  #   Properties:
+  #     Type: String
+  #     Name: !Sub '/${AppName}/${Stage}/${AWS::Region}/UsePrivateSubnetCondition'
+  #     Description: !Sub "true if Neo4j will use a private subnet, false if Neo4j will use a public subnet"
+  #     Value: !Ref usePrivateSubnet
+
+  CreateVpcConditionVpc:
     Type: AWS::EC2::VPC
     Condition: CreateVpc
     Properties:
@@ -87,69 +140,164 @@ Resources:
       Tags:
         - Key: Name
           Value: !Sub '${Stage}-${AppName}-${AWS::Region}-vpc'
-  
-  PublicSubnet:
-    Type: AWS::EC2::Subnet
-    Condition: CreateVpc
-    Properties:
-      CidrBlock: 10.0.0.0/24
-      VpcId: !Ref Vpc
-      AvailabilityZone: !FindInMap [AvailabilityZoneMap, !Ref AWS::Region, AvailabilityZone]
-      MapPublicIpOnLaunch: true
-  
-  InternetGateway:
-    Type: AWS::EC2::InternetGateway
-    Condition: CreateVpc
-  
-  RouteTable:
-    Type: AWS::EC2::RouteTable
-    Condition: CreateVpc
-    Properties:
-      VpcId: !Ref Vpc
-  
-  VpcGatewayAttachment:
-    Type: AWS::EC2::VPCGatewayAttachment
-    Condition: CreateVpc
-    Properties:
-      VpcId: !Ref Vpc
-      InternetGatewayId: !Ref InternetGateway
-  
-  Route:
-    Type: AWS::EC2::Route
-    Condition: CreateVpc
-    DependsOn:
-      - InternetGateway
-      - VpcGatewayAttachment
-    Properties:
-      RouteTableId: !Ref RouteTable
-      DestinationCidrBlock: 0.0.0.0/0
-      GatewayId: !Ref InternetGateway
-  
-  SubnetRouteTableAssociation:
-    Type: AWS::EC2::SubnetRouteTableAssociation
-    Condition: CreateVpc
-    Properties:
-      RouteTableId: !Ref RouteTable
-      SubnetId: !Ref PublicSubnet
-  
-  CreateVpcConditionVpcIDParameter:
+
+  CreateVpcConditionVpcIdParameter:
     Type: AWS::SSM::Parameter
     Condition: CreateVpc
     Properties:
       Type: String
       Name: !Sub '/${AppName}/${Stage}/${AWS::Region}/VpcID'
       Description: !Sub "Name of VPC network for ${AppName}"
-      Value: !Ref Vpc
-  
-  CreateVpcConditionPublicSubnetIDParameter:
+      Value: !Ref CreateVpcConditionVpc
+
+  CreateVpcConditionPublicSubnet:
+    Type: AWS::EC2::Subnet
+    Condition: CreateVpc
+    Properties:
+      CidrBlock: 10.0.0.0/24
+      VpcId: !Ref CreateVpcConditionVpc
+      AvailabilityZone: !FindInMap [AvailabilityZoneMap, !Ref AWS::Region, AvailabilityZone]
+      MapPublicIpOnLaunch: true
+
+  CreateVpcConditionPublicSubnetIdParameter:
     Type: AWS::SSM::Parameter
     Condition: CreateVpc
     Properties:
       Type: String
-      Name: !Sub '/${AppName}/${Stage}/${AWS::Region}/PublicSubnetID'
+      Name: !Sub '/${AppName}/${Stage}/${AWS::Region}/PublicSubnetId'
       Description: !Sub "Public Subnet for the ${AppName} Neo4j server"
-      Value: !Ref PublicSubnet
+      Value: !Ref CreateVpcConditionPublicSubnet
+
+  UseExistingVpcConditionPublicSubnetIdParameter:
+    Type: AWS::SSM::Parameter
+    Condition: UseExistingVpc
+    Properties:
+      Type: String
+      Name: !Sub '/${AppName}/${Stage}/${AWS::Region}/PublicSubnetId'
+      Description: !Sub "Public Subnet for the ${AppName} Neo4j server"
+      Value: !Ref PublicSubnetId
   
+  CreateVpcConditionInternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Condition: CreateVpc
+  
+  CreateVpcConditionPublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Condition: CreateVpc
+    Properties:
+      VpcId: !Ref CreateVpcConditionVpc
+  
+  CreateVpcConditionVpcGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Condition: CreateVpc
+    Properties:
+      VpcId: !Ref CreateVpcConditionVpc
+      InternetGatewayId: !Ref CreateVpcConditionInternetGateway
+  
+  CreateVpcConditionPublicRoute:
+    Type: AWS::EC2::Route
+    Condition: CreateVpc
+    DependsOn:
+      - CreateVpcConditionInternetGateway
+      - CreateVpcConditionVpcGatewayAttachment
+    Properties:
+      RouteTableId: !Ref CreateVpcConditionPublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref CreateVpcConditionInternetGateway
+  
+  CreateVpcConditionPublicSubnetRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Condition: CreateVpc
+    Properties:
+      RouteTableId: !Ref CreateVpcConditionPublicRouteTable
+      SubnetId: !Ref CreateVpcConditionPublicSubnet
+  
+  CreateAndUsePrivateSubnetConditionPrivateSubnet:
+    Type: AWS::EC2::Subnet
+    Condition: CreateAndUsePrivateSubnet
+    Properties:
+      CidrBlock: 10.0.1.0/24
+      VpcId: !Ref CreateVpcConditionVpc
+      AvailabilityZone: !FindInMap [AvailabilityZoneMap, !Ref AWS::Region, AvailabilityZone]
+
+  CreateAndUsePrivateSubnetConditionPrivateSubnetIdParameter:
+    Type: AWS::SSM::Parameter
+    Condition: CreateAndUsePrivateSubnet
+    Properties:
+      Type: String
+      Name: !Sub '/${AppName}/${Stage}/${AWS::Region}/PrivateSubnetId'
+      Description: !Sub "Private Subnet for the ${AppName} Neo4j server"
+      Value: !Ref CreateAndUsePrivateSubnetConditionPrivateSubnet
+
+  UseExistingPrivateSubnetConditionPrivateSubnetIdParameter:
+    Type: AWS::SSM::Parameter
+    Condition: UseExistingPrivateSubnet
+    Properties:
+      Type: String
+      Name: !Sub '/${AppName}/${Stage}/${AWS::Region}/PrivateSubnetId'
+      Description: !Sub "Private Subnet for the ${AppName} Neo4j server"
+      Value: !Ref PrivateSubnetId
+
+  # Endpoints are required for VPC Lambda to connect to AWS services using SDKs
+  # Private DNS must be enabled which means there can only be one VPC endpoint per service
+  UseExistingPrivateSubnetWithSsmEndpointConditionSsmVpcEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Condition: UseExistingPrivateSubnetWithSsmEndpoint
+    Properties:
+      VpcId: !Ref VpcId
+      ServiceName: !Sub "com.amazonaws.${AWS::Region}.ssm"
+      VpcEndpointType: Interface
+      SecurityGroupIds:
+        - !Ref Neo4jDatabaseSecurityGroup
+      SubnetIds:
+        - !Ref PrivateSubnetId
+      PrivateDnsEnabled: true
+
+  # Endpoints are required for VPC Lambda to connect to AWS services using SDKs
+  # Private DNS must be enabled which means there can only be one VPC endpoint per service
+  UseExistingPrivateSubnetWithVpcEndpointsConditionSsmVpcEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Condition: UseExistingPrivateSubnetWithVpcEndpoints
+    Properties:
+      VpcId: !Ref VpcId
+      ServiceName: !Sub "com.amazonaws.${AWS::Region}.ssm"
+      VpcEndpointType: Interface
+      SecurityGroupIds:
+        - !Ref Neo4jDatabaseSecurityGroup
+      SubnetIds:
+        - !Ref PrivateSubnetId
+      PrivateDnsEnabled: true
+
+  # Endpoints are required for VPC Lambda to connect to AWS services using SDKs
+  # Private DNS must be enabled which means there can only be one VPC endpoint per service
+  UseExistingPrivateSubnetWithSecretsManagerEndpointConditionSecretsVpcEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Condition: UseExistingPrivateSubnetWithSecretsManagerEndpoint
+    Properties:
+      VpcId: !Ref VpcId
+      ServiceName: !Sub "com.amazonaws.${AWS::Region}.secretsmanager"
+      VpcEndpointType: Interface
+      SecurityGroupIds:
+        - !Ref Neo4jDatabaseSecurityGroup
+      SubnetIds:
+        - !Ref PrivateSubnetId
+      PrivateDnsEnabled: true
+
+  # Endpoints are required for VPC Lambda to connect to AWS services using SDKs
+  # Private DNS must be enabled which means there can only be one VPC endpoint per service
+  UseExistingPrivateSubnetWithVpcEndpointsConditionSecretsVpcEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Condition: UseExistingPrivateSubnetWithVpcEndpoints
+    Properties:
+      VpcId: !Ref VpcId
+      ServiceName: !Sub "com.amazonaws.${AWS::Region}.secretsmanager"
+      VpcEndpointType: Interface
+      SecurityGroupIds:
+        - !Ref Neo4jDatabaseSecurityGroup
+      SubnetIds:
+        - !Ref PrivateSubnetId
+      PrivateDnsEnabled: true
+
   UseExternalVpcConditionVpcIDParameter:
     Type: AWS::SSM::Parameter
     Condition: UseExternalVpc
@@ -210,21 +358,25 @@ Resources:
         - Key: AppName 
           Value: !Ref AppName
 
-  Neo4jDatabaseElasticIp:
+  # These are created only if a public subnet is used for Neo4j
+  UsePublicSubnetConditionNeo4jDatabaseElasticIp:
     Type: AWS::EC2::EIP
+    Condition: UsePublicSubnet
     Properties:
       Domain: vpc
 
-  Neo4jDatabaseEndpointParameter:
+  UsePublicSubnetConditionNeo4jDatabaseEndpointParameter:
     Type: AWS::SSM::Parameter
+    Condition: UsePublicSubnet
     Properties:
       Type: String
       Name: !Sub '/${AppName}/${Stage}/${AWS::Region}/Neo4jDatabaseEndpoint'
       Description: !Sub 'Endpoint for ${AppName} Neo4j server'
       Value: !Ref Neo4jDatabaseElasticIp
 
-  Neo4jDatabaseEndpointAllocationIdParameter:
+  UsePublicSubnetConditionNeo4jDatabaseEndpointAllocationIdParameter:
     Type: AWS::SSM::Parameter
+    Condition: UsePublicSubnet
     Properties:
       Type: String
       Name: !Sub '/${AppName}/${Stage}/${AWS::Region}/Neo4jDatabaseEndpointAllocationId'
