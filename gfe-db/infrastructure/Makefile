@@ -4,9 +4,19 @@ target:
 	$(info ${HELP_MESSAGE})
 	@exit 0
 
+# VPC_ID, USE_PRIVATE_SUBNET, PUBLIC_SUBNET_ID and PRIVATE_SUBNET_ID are validated in the root Makefile
+# TODO when CREATE_VPC=false, run target to find existing VPC Endpoint Ids to determine CREATE_SSM_VPC_ENDPOINT and CREATE_SECRETS_MANAGER_VPC_ENDPOINT
 deploy: 
 	@echo "$$(gdate -u +'%Y-%m-%d %H:%M:%S.%3N') - Deploying ${SERVICE} service" 2>&1 | tee -a $${CFN_LOG_PATH}
-	$(MAKE) service.deploy
+ifeq ($(CREATE_VPC),false)
+ifndef PRIVATE_SUBNET_ID
+	$(eval USE_PRIVATE_SUBNET := false)
+endif
+ifdef PRIVATE_SUBNET_ID
+	$(eval USE_PRIVATE_SUBNET := true)
+endif
+endif
+	$(MAKE) service.deploy USE_PRIVATE_SUBNET=$${USE_PRIVATE_SUBNET}
 	$(MAKE) service.monitoring.create-subscriptions
 
 service.deploy.update-dns:
@@ -26,8 +36,7 @@ service.deploy.update-dns:
 	echo $$res | jq -r
 
 # TODO test AWSCLI output and validate the stack was created successfully
-# Add stateful check from SSM Param of vpc=true/false to correctly set CREATE_VPC
-service.deploy:
+service.deploy: #CREATE_VPC=<bool> USE_PRIVATE_SUBNET=<bool> SUBNET_ID=<string>
 	@echo "$$(gdate -u +'%Y-%m-%d %H:%M:%S.%3N') - Deploying CloudFormation" 2>&1 | tee -a $${CFN_LOG_PATH}
 	@aws cloudformation deploy \
 		--region $${AWS_REGION} \
@@ -38,14 +47,17 @@ service.deploy:
 			Stage="$${STAGE}" \
 			AppName="$${APP_NAME}" \
 			createVpc="$${CREATE_VPC}" \
+			usePrivateSubnet="$${USE_PRIVATE_SUBNET}" \
+			createSsmVpcEndpoint="$${CREATE_SSM_VPC_ENDPOINT}" \
+			createSecretsManagerVpcEndpoint="$${CREATE_SECRETS_MANAGER_VPC_ENDPOINT}" \
+			VpcId="$${VPC_ID}" \
+			PublicSubnetId="$${PUBLIC_SUBNET_ID}" \
+			PrivateSubnetId="$${PRIVATE_SUBNET_ID}" \
 			AdminEmail="$${ADMIN_EMAIL}" \
 			DataBucketName="$$DATA_BUCKET_NAME" \
 			GitHubPersonalAccessToken="$$GITHUB_PERSONAL_ACCESS_TOKEN" \
-			HostedZoneId="$${HOSTED_ZONE_ID}" \
-			VpcId="$${VPC_ID}" \
-			PublicSubnetId="$${PUBLIC_SUBNET_ID}" \
 			2>&1 | tee -a $${CFN_LOG_PATH} || true
-	$(MAKE) service.deploy.update-dns
+	# $(MAKE) service.deploy.update-dns
 
 service.monitoring.create-subscriptions:
 	@echo "$$(gdate -u +'%Y-%m-%d %H:%M:%S.%3N') - Creating SNS topic subscriptions" 2>&1 | tee -a $${CFN_LOG_PATH}

@@ -14,13 +14,11 @@ Parameters:
   # Requires validation of existing VPC endpoint
   createSsmVpcEndpoint:
     Type: String
+    Default: false
   # Requires validation of existing VPC endpoint
   createSecretsManagerVpcEndpoint:
     Type: String
-  AdminEmail:
-    Type: String
-  DataBucketName:
-    Type: String
+    Default: false
   VpcId:
     Type: String
     Description: Vpc ID if using an external VPC
@@ -36,6 +34,10 @@ Parameters:
     Description: Required if VpcId is set
     Default: ''
     # AllowedPattern: 
+  AdminEmail:
+    Type: String
+  DataBucketName:
+    Type: String
   GitHubPersonalAccessToken:
     Type: String
     NoEcho: true
@@ -47,6 +49,9 @@ Conditions:
 
   # TODO update: createVpc is false and VpcId and PublicSubnetId are not empty
   UseExistingVpc: !Equals [ !Ref createVpc, "false" ]
+
+  CreateSsmVpcEndpoint: !Equals [ !Ref createSsmVpcEndpoint, "true" ]
+  CreateSecretsManagerVpcEndpoint: !Equals [ !Ref createSecretsManagerVpcEndpoint, "true" ]
 
   # Determines whether Neo4j will use a private or public subnet
   UsePrivateSubnet: !Equals [ !Ref usePrivateSubnet, "true" ]
@@ -61,22 +66,16 @@ Conditions:
   # UseExistingPublicSubnet: !And [ !Condition UseExistingVpc, !Condition UsePublicSubnet ] # A created or existing public subnet is always used for Batch
 
   # Determines how to create VPC endpoints for SSM and Secrets Manager, which also depends on whether they already exist
-  UseExistingPrivateSubnetWithSsmEndpoint: !Or
-    - !Condition CreateAndUsePrivateSubnet
-    - !And 
-      - !Condition UseExistingPrivateSubnet
-      - !Condition createSsmVpcEndpoint
-  UseExistingPrivateSubnetWithSecretsManagerEndpoint: !Or
-    - !Condition CreateAndUsePrivateSubnet
-    - !And 
-      - !Condition UseExistingPrivateSubnet
-      - !Condition createSecretsManagerVpcEndpoint
-  UseExistingPrivateSubnetWithVpcEndpoints: !Or
-    - !Condition CreateAndUsePrivateSubnet
-    - !And 
-      - !Condition UseExistingPrivateSubnet
-      - !Condition createSsmVpcEndpoint
-      - !Condition createSecretsManagerVpcEndpoint
+  UseExistingPrivateSubnetWithSsmEndpoint: !And
+    - !Condition UseExistingPrivateSubnet
+    - !Condition CreateSsmVpcEndpoint # Ref to PrivateSubnetId parameter
+  UseExistingPrivateSubnetWithSecretsManagerEndpoint: !And
+    - !Condition UseExistingPrivateSubnet
+    - !Condition CreateSecretsManagerVpcEndpoint # Ref to PrivateSubnetId parameter
+  UseExistingPrivateSubnetWithVpcEndpoints: !And
+    - !Condition UseExistingPrivateSubnet
+    - !Condition CreateSsmVpcEndpoint # Ref to PrivateSubnetId parameter
+    - !Condition CreateSecretsManagerVpcEndpoint # Ref to PrivateSubnetId parameter
 
 Mappings:
   # AvailabilityZoneMap defines availability zones where an m5d.xlarge instance is available (used for Neo4j server).
@@ -247,8 +246,8 @@ Resources:
       VpcId: !Ref VpcId
       ServiceName: !Sub "com.amazonaws.${AWS::Region}.ssm"
       VpcEndpointType: Interface
-      SecurityGroupIds:
-        - !Ref Neo4jDatabaseSecurityGroup
+      # SecurityGroupIds:
+      #   - !Ref Neo4jDatabaseSecurityGroup
       SubnetIds:
         - !Ref PrivateSubnetId
       PrivateDnsEnabled: true
@@ -262,10 +261,25 @@ Resources:
       VpcId: !Ref VpcId
       ServiceName: !Sub "com.amazonaws.${AWS::Region}.ssm"
       VpcEndpointType: Interface
-      SecurityGroupIds:
-        - !Ref Neo4jDatabaseSecurityGroup
+      # SecurityGroupIds:
+      #   - !Ref Neo4jDatabaseSecurityGroup
       SubnetIds:
         - !Ref PrivateSubnetId
+      PrivateDnsEnabled: true
+
+  # Endpoints are required for VPC Lambda to connect to AWS services using SDKs
+  # Private DNS must be enabled which means there can only be one VPC endpoint per service
+  CreateAndUsePrivateSubnetConditionSsmVpcEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Condition: CreateAndUsePrivateSubnet
+    Properties:
+      VpcId: !Ref CreateVpcConditionVpc
+      ServiceName: !Sub "com.amazonaws.${AWS::Region}.ssm"
+      VpcEndpointType: Interface
+      # SecurityGroupIds:
+      #   - !Ref Neo4jDatabaseSecurityGroup
+      SubnetIds:
+        - !Ref CreateAndUsePrivateSubnetConditionPrivateSubnet
       PrivateDnsEnabled: true
 
   # Endpoints are required for VPC Lambda to connect to AWS services using SDKs
@@ -277,8 +291,8 @@ Resources:
       VpcId: !Ref VpcId
       ServiceName: !Sub "com.amazonaws.${AWS::Region}.secretsmanager"
       VpcEndpointType: Interface
-      SecurityGroupIds:
-        - !Ref Neo4jDatabaseSecurityGroup
+      # SecurityGroupIds:
+      #   - !Ref Neo4jDatabaseSecurityGroup
       SubnetIds:
         - !Ref PrivateSubnetId
       PrivateDnsEnabled: true
@@ -292,24 +306,39 @@ Resources:
       VpcId: !Ref VpcId
       ServiceName: !Sub "com.amazonaws.${AWS::Region}.secretsmanager"
       VpcEndpointType: Interface
-      SecurityGroupIds:
-        - !Ref Neo4jDatabaseSecurityGroup
+      # SecurityGroupIds:
+      #   - !Ref Neo4jDatabaseSecurityGroup
       SubnetIds:
         - !Ref PrivateSubnetId
       PrivateDnsEnabled: true
 
-  UseExternalVpcConditionVpcIDParameter:
+  # Endpoints are required for VPC Lambda to connect to AWS services using SDKs
+  # Private DNS must be enabled which means there can only be one VPC endpoint per service
+  CreateAndUsePrivateSubnetConditionSecretsVpcEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Condition: CreateAndUsePrivateSubnet
+    Properties:
+      VpcId: !Ref CreateVpcConditionVpc
+      ServiceName: !Sub "com.amazonaws.${AWS::Region}.secretsmanager"
+      VpcEndpointType: Interface
+      # SecurityGroupIds:
+      #   - !Ref Neo4jDatabaseSecurityGroup
+      SubnetIds:
+        - !Ref CreateAndUsePrivateSubnetConditionPrivateSubnet
+      PrivateDnsEnabled: true
+
+  UseExistingVpcConditionVpcIDParameter:
     Type: AWS::SSM::Parameter
-    Condition: UseExternalVpc
+    Condition: UseExistingVpc
     Properties:
       Type: String
       Name: !Sub '/${AppName}/${Stage}/${AWS::Region}/VpcID'
       Description: !Sub "Name of VPC network for ${AppName}"
       Value: !Ref VpcId
   
-  UseExternalVpcConditionPublicSubnetIDParameter:
+  UseExistingVpcConditionPublicSubnetIDParameter:
     Type: AWS::SSM::Parameter
-    Condition: UseExternalVpc
+    Condition: UseExistingVpc
     Properties:
       Type: String
       Name: !Sub '/${AppName}/${Stage}/${AWS::Region}/PublicSubnetID'
@@ -372,7 +401,7 @@ Resources:
       Type: String
       Name: !Sub '/${AppName}/${Stage}/${AWS::Region}/Neo4jDatabaseEndpoint'
       Description: !Sub 'Endpoint for ${AppName} Neo4j server'
-      Value: !Ref Neo4jDatabaseElasticIp
+      Value: !Ref UsePublicSubnetConditionNeo4jDatabaseElasticIp
 
   UsePublicSubnetConditionNeo4jDatabaseEndpointAllocationIdParameter:
     Type: AWS::SSM::Parameter
@@ -381,7 +410,7 @@ Resources:
       Type: String
       Name: !Sub '/${AppName}/${Stage}/${AWS::Region}/Neo4jDatabaseEndpointAllocationId'
       Description: !Sub 'AllocationId for ${AppName} Neo4j server static IP'
-      Value: !GetAtt Neo4jDatabaseElasticIp.AllocationId
+      Value: !GetAtt UsePublicSubnetConditionNeo4jDatabaseElasticIp.AllocationId
 
   DataPipelineErrorsTopicPolicy:
     Type: AWS::SNS::TopicPolicy
@@ -461,9 +490,9 @@ Resources:
       Description: !Sub 'ARN for ${AppName} Data Pipeline Errors SNS topic'
       Value: !Ref DataPipelineExecutionTopic
 
-Outputs:
-  Neo4jDatabaseElasticIp:
-    Description: "Elastic IP for gfe-db Neo4j database instance"
-    Value: !Ref Neo4jDatabaseElasticIp
-    Export:
-      Name: !Sub "${AppName}-${Stage}-Neo4jDatabaseElasticIp"
+# Outputs:
+#   UsePublicSubnetConditionNeo4jDatabaseElasticIp:
+#     Description: "Elastic IP for gfe-db Neo4j database instance"
+#     Value: !Ref UsePublicSubnetConditionNeo4jDatabaseElasticIp
+#     Export:
+#       Name: !Sub "${AppName}-${Stage}-Neo4jDatabaseElasticIp"
