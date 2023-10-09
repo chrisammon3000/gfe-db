@@ -41,7 +41,7 @@ export FUNCTIONS_PATH := ${APP_NAME}/pipeline/functions
 # Required environment variables
 REQUIRED_VARS := STAGE APP_NAME AWS_ACCOUNT AWS_REGION AWS_PROFILE SUBSCRIBE_EMAILS \
                  GITHUB_REPOSITORY_OWNER GITHUB_REPOSITORY_NAME GITHUB_PERSONAL_ACCESS_TOKEN \
-                 ADMIN_EMAIL NEO4J_AMI_ID APOC_VERSION GDS_VERSION
+                 ADMIN_EMAIL NEO4J_AMI_ID APOC_VERSION GDS_VERSION CREATE_VPC
 
 # stdout colors
 # blue: runtime message, no action required
@@ -93,15 +93,6 @@ env.print:
 	@echo "+---------------------------------------------------------------------------------+"
 	@echo "\033[0;33mPlease confirm the above values are correct.\033[0m"
 
-deploy: splash-screen env.validate ##=> Deploy all services
-	@echo "$$(gdate -u +'%Y-%m-%d %H:%M:%S.%3N') - Deploying ${APP_NAME} to ${AWS_ACCOUNT}" 2>&1 | tee -a ${CFN_LOG_PATH}
-	$(MAKE) env.print
-	@echo "Deploy stack to the \`${STAGE}\` environment? [y/N] \c " && read ans && [ $${ans:-N} = y ]
-	$(MAKE) infrastructure.deploy
-	# $(MAKE) database.deploy
-	# $(MAKE) pipeline.deploy
-	@echo "$$(gdate -u +'%Y-%m-%d %H:%M:%S.%3N') - Finished deploying ${APP_NAME}" 2>&1 | tee -a ${CFN_LOG_PATH}
-
 logs.dirs:
 	@mkdir -p "${LOGS_DIR}/cfn" \
 		"${LOGS_DIR}/pipeline/build" \
@@ -151,68 +142,77 @@ env.validate.stage:
 		| jq -r '.Parameters[0].Value') && \
 	[[ $$res = "null" ]] && echo "No deployed stage found" || echo "Found deployed stage: $$res" && \
 	if [ "$${res}" = "null" ]; then \
-		echo "\033[0;32m**** Starting new deployment. ****\033[0m"; \
+		echo "\033[0;34m**** Starting new deployment. ****\033[0m"; \
 	elif [ "$${res}" = "${STAGE}" ]; then \
-		echo "\033[0;32m**** Found existing deployment for \`${STAGE}\` ****\033[0m"; \
+		echo "\033[0;34m**** Found existing deployment for \`${STAGE}\` ****\033[0m"; \
 	else \
 		echo "\033[0;31m**** STAGE mismatch or bad credential configuration. ****\033[0m" && \
 		echo "\033[0;31m**** Please refer to the documentation for a list of prerequisites. ****\033[0m" && \
 		exit 1; \
 	fi
 
-# if VPC_ID is set, then one of PRIVATE_SUBNET_ID or PUBLIC_SUBNET_ID must be set
-env.validate.subnets:
-ifneq ($(and $(PRIVATE_SUBNET_ID),$(PUBLIC_SUBNET_ID)),)
-	$(call red, "PRIVATE_SUBNET_ID and PUBLIC_SUBNET_ID cannot both be set")
-	@exit 1
-endif
-ifdef PRIVATE_SUBNET_ID
-ifdef PUBLIC_SUBNET_ID
-	$(call red, "PRIVATE_SUBNET_ID and PUBLIC_SUBNET_ID cannot both be set")
+# if CREATE_VPC is true, USE_PRIVATE_SUBNET must be true or false
+# if CREATE_VPC is false, VPC_ID and PUBLIC_SUBNET_ID must be set, PRIVATE_SUBNET_ID is optional
+env.validate.create-vpc:
+ifeq ($(CREATE_VPC),true)
+	$(call green, "CREATE_VPC is set to ${CREATE_VPC}")
+	$(call blue, "Deployment will create a new VPC.")
+ifndef USE_PRIVATE_SUBNET
+	$(call red, "USE_PRIVATE_SUBNET must be set if CREATE_VPC is true")
 	@exit 1
 else
-	$(call green, "Found PRIVATE_SUBNET_ID: ${PRIVATE_SUBNET_ID}")
-	$(eval export USE_PRIVATE_SUBNET := true)
-	$(eval export SUBNET_ID := ${PRIVATE_SUBNET_ID})
-endif
-endif
-ifdef PUBLIC_SUBNET_ID
-	$(call green, "Found PUBLIC_SUBNET_ID: ${PUBLIC_SUBNET_ID}")
-	$(eval export USE_PRIVATE_SUBNET := false)
-	$(eval export SUBNET_ID := ${PUBLIC_SUBNET_ID})
-endif
-
-env.validate.use-private-subnet:
-ifdef USE_PRIVATE_SUBNET
 	$(call green, "USE_PRIVATE_SUBNET is set to ${USE_PRIVATE_SUBNET}")
-else
-	$(call green, "USE_PRIVATE_SUBNET is not set. Deployment will use a public subnet as default.")
-	$(eval export USE_PRIVATE_SUBNET := false)
 endif
 
-env.validate.vpc:
 ifdef VPC_ID
-	$(call green, VPC_ID is set. Using existing VPC: $(VPC_ID))
-	$(eval export CREATE_VPC := false)
-	$(MAKE) env.validate.subnets
-else
-ifdef PRIVATE_SUBNET_ID
-	$(call red, PRIVATE_SUBNET_ID is set but VPC_ID is not set. Please set VPC_ID or unset PRIVATE_SUBNET_ID.)
+	$(call red, "VPC_ID must not be set if CREATE_VPC is true")
 	@exit 1
 endif
 ifdef PUBLIC_SUBNET_ID
-	$(call red, PUBLIC_SUBNET_ID is set but VPC_ID is not set. Please set VPC_ID or unset PUBLIC_SUBNET_ID.)
+	$(call red, "PUBLIC_SUBNET_ID must not be set if CREATE_VPC is true")
 	@exit 1
 endif
-	$(call green, VPC_ID is not set. Creating new VPC.)
-	$(eval export CREATE_VPC := true)
-	$(MAKE) env.validate.use-private-subnet
+ifdef PRIVATE_SUBNET_ID
+	$(call red, "PRIVATE_SUBNET_ID must not be set if CREATE_VPC is true")
+	@exit 1
 endif
+else ifeq ($(CREATE_VPC),false)
+	$(call green, "CREATE_VPC is set to ${CREATE_VPC}")
+	$(call blue, "Deployment will use an existing VPC.")
+ifndef VPC_ID
+	$(call red, "VPC_ID must be set if CREATE_VPC is false")
+	@exit 1
+else
+	$(call green, "Found VPC_ID: ${VPC_ID}")
+endif
+ifndef PUBLIC_SUBNET_ID
+	$(call red, "PUBLIC_SUBNET_ID must be set if CREATE_VPC is false")
+	@exit 1
+else
+	$(call green, "Found PUBLIC_SUBNET_ID: ${PUBLIC_SUBNET_ID}")
+endif
+ifdef PRIVATE_SUBNET_ID
+	$(call green, "Found PRIVATE_SUBNET_ID: ${PRIVATE_SUBNET_ID}")
+	$(call blue, "Deployment will use a private subnet.")
+else
+	$(call blue, "Deployment will use a public subnet.")
+endif
+endif
+
 
 env.validate: check.dependencies env.validate.stage
 	$(foreach var,$(REQUIRED_VARS),\
 		$(if $(value $(var)),,$(error $(var) is not set. Please add $(var) to the environment variables.)))
-	$(MAKE) env.validate.vpc
+	$(MAKE) env.validate.create-vpc
+
+deploy: splash-screen env.validate ##=> Deploy all services
+	@echo "$$(gdate -u +'%Y-%m-%d %H:%M:%S.%3N') - Deploying ${APP_NAME} to ${AWS_ACCOUNT}" 2>&1 | tee -a ${CFN_LOG_PATH}
+	$(MAKE) env.print
+	@echo "Deploy stack to the \`${STAGE}\` environment? [y/N] \c " && read ans && [ $${ans:-N} = y ]
+	$(MAKE) infrastructure.deploy
+	# $(MAKE) database.deploy
+	# $(MAKE) pipeline.deploy
+	@echo "$$(gdate -u +'%Y-%m-%d %H:%M:%S.%3N') - Finished deploying ${APP_NAME}" 2>&1 | tee -a ${CFN_LOG_PATH}
 
 infrastructure.deploy: 
 	$(MAKE) -C ${APP_NAME}/infrastructure/ deploy
