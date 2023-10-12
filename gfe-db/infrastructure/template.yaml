@@ -414,6 +414,110 @@ Resources:
       Description: !Sub "AllocationId for ${AppName} Neo4j server static IP"
       Value: !GetAtt UsePublicSubnetConditionNeo4jDatabaseElasticIp.AllocationId
 
+  CreateVpcConditionNeo4jDatabaseSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Condition: CreateVpc
+    Properties:
+      GroupName: !Sub '${Stage}-${AppName}-neo4j-sg'
+      GroupDescription: Security group for the GFE database
+      VpcId: !Ref CreateVpcConditionVpc
+      SecurityGroupIngress:
+        - CidrIp: 0.0.0.0/0
+          FromPort: 80
+          IpProtocol: tcp
+          ToPort: 80
+          Description: HTTP access for SSL certificate creation (required)
+        - CidrIp: 0.0.0.0/0
+          FromPort: 443
+          IpProtocol: tcp
+          ToPort: 443
+          Description: HTTPs access (required)
+        - CidrIp: 0.0.0.0/0
+          FromPort: 7474
+          IpProtocol: tcp
+          ToPort: 7474
+          Description: Neo4j HTTP access (required)
+        - CidrIp: 0.0.0.0/0
+          FromPort: 7473
+          IpProtocol: tcp
+          ToPort: 7473
+          Description: Neo4j HTTPS access (required)
+        - CidrIp: 0.0.0.0/0
+          FromPort: 7687
+          IpProtocol: tcp
+          ToPort: 7687
+          Description: Neo4j Bolt driver access (required)
+        # - CidrIp: 0.0.0.0/0
+        #   FromPort: 22
+        #   IpProtocol: tcp
+        #   ToPort: 22
+        #   Description: Update IP to use MyIP
+      # TODO remove
+      Tags:
+        - Key: Name
+          Value: !Sub '${Stage}-${AppName}-neo4j-sg'
+
+  CreateVpcConditionNeo4jDatabaseSecurityGroupIdParameter:
+    Type: AWS::SSM::Parameter
+    Condition: CreateVpc
+    Properties:
+      Type: String
+      Name: !Sub '/${AppName}/${Stage}/${AWS::Region}/Neo4jDatabaseSecurityGroupId'
+      Description: "ID of the Neo4jDatabaseSecurityGroup"
+      Value: !Ref CreateVpcConditionNeo4jDatabaseSecurityGroup
+
+  UseExistingVpcConditionNeo4jDatabaseSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Condition: UseExistingVpc
+    Properties:
+      GroupName: !Sub '${Stage}-${AppName}-neo4j-sg'
+      GroupDescription: Security group for the GFE database
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - CidrIp: 0.0.0.0/0
+          FromPort: 80
+          IpProtocol: tcp
+          ToPort: 80
+          Description: HTTP access for SSL certificate creation (required)
+        - CidrIp: 0.0.0.0/0
+          FromPort: 443
+          IpProtocol: tcp
+          ToPort: 443
+          Description: HTTPs access (required)
+        - CidrIp: 0.0.0.0/0
+          FromPort: 7474
+          IpProtocol: tcp
+          ToPort: 7474
+          Description: Neo4j HTTP access (required)
+        - CidrIp: 0.0.0.0/0
+          FromPort: 7473
+          IpProtocol: tcp
+          ToPort: 7473
+          Description: Neo4j HTTPS access (required)
+        - CidrIp: 0.0.0.0/0
+          FromPort: 7687
+          IpProtocol: tcp
+          ToPort: 7687
+          Description: Neo4j Bolt driver access (required)
+        # - CidrIp: 0.0.0.0/0
+        #   FromPort: 22
+        #   IpProtocol: tcp
+        #   ToPort: 22
+        #   Description: Update IP to use MyIP
+      # TODO remove
+      Tags:
+        - Key: Name
+          Value: !Sub '${Stage}-${AppName}-neo4j-sg'
+
+  UseExistingVpcConditionNeo4jDatabaseSecurityGroupIdParameter:
+    Type: AWS::SSM::Parameter
+    Condition: UseExistingVpc
+    Properties:
+      Type: String
+      Name: !Sub '/${AppName}/${Stage}/${AWS::Region}/Neo4jDatabaseSecurityGroupId'
+      Description: "ID of the Neo4jDatabaseSecurityGroup"
+      Value: !Ref UseExistingVpcConditionNeo4jDatabaseSecurityGroup
+
   DataPipelineErrorsTopicPolicy:
     Type: AWS::SNS::TopicPolicy
     Properties:
