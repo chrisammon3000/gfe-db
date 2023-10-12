@@ -4,6 +4,35 @@ target:
 	$(info ${HELP_MESSAGE})
 	@exit 0
 
+# stdout colors
+# blue: runtime message, no action required
+# green: parameter value message, no action required
+# yellow: message to user, action required
+# red: error message, action required
+define blue
+	@tput setaf 4
+	@echo $1
+	@tput sgr0
+endef
+
+define green
+	@tput setaf 2
+	@echo $1
+	@tput sgr0
+endef
+
+define yellow
+	@tput setaf 3
+	@echo $1
+	@tput sgr0
+endef
+
+define red
+	@tput setaf 1
+	@echo $1
+	@tput sgr0
+endef
+
 # VPC_ID, USE_PRIVATE_SUBNET, PUBLIC_SUBNET_ID and PRIVATE_SUBNET_ID are validated in the root Makefile
 # TODO when CREATE_VPC=false, run target to find existing VPC Endpoint Ids to determine CREATE_SSM_VPC_ENDPOINT and CREATE_SECRETS_MANAGER_VPC_ENDPOINT
 deploy: 
@@ -14,9 +43,33 @@ ifndef PRIVATE_SUBNET_ID
 endif
 ifdef PRIVATE_SUBNET_ID
 	$(eval USE_PRIVATE_SUBNET := true)
+	$(eval SSM_VPC_ENDPOINT_ID := $$(shell aws ec2 describe-vpc-endpoints | \
+		jq -r 'del(.VpcEndpoints[].PolicyDocument)' | \
+		jq '.VpcEndpoints[] | \
+		select(.ServiceName == "com.amazonaws.us-east-1.ssm" and \
+		.VpcEndpointType == "Interface" and \
+		any(.SubnetIds[]; . == "${PRIVATE_SUBNET_ID}"))' | \
+		jq -r '.VpcEndpointId'))
+	$(eval SECRETSMANAGER_VPC_ENDPOINT_ID := $$(shell aws ec2 describe-vpc-endpoints | \
+		jq -r 'del(.VpcEndpoints[].PolicyDocument)' | \
+		jq '.VpcEndpoints[] | \
+		select(.ServiceName == "com.amazonaws.us-east-1.secretsmanager" and \
+		.VpcEndpointType == "Interface" and \
+		any(.SubnetIds[]; . == "${PRIVATE_SUBNET_ID}"))' | \
+		jq -r '.VpcEndpointId'))
 endif
 endif
-	$(MAKE) service.deploy USE_PRIVATE_SUBNET=$${USE_PRIVATE_SUBNET}
+	$(info SSM_VPC_ENDPOINT_ID: ${SSM_VPC_ENDPOINT_ID})
+	$(info SECRETSMANAGER_VPC_ENDPOINT_ID: ${SECRETSMANAGER_VPC_ENDPOINT_ID})
+	$(if $(shell test -z "${SSM_VPC_ENDPOINT_ID}" && echo true),\
+		$(call blue, "No Systems Manager VPC endpoint found. Deployment will create a new one in ${PRIVATE_SUBNET_ID}."),\
+		$(call blue, "VPC endpoint for Systems Manager found: ${SSM_VPC_ENDPOINT_ID}. Deployment will use this one.")\
+	)
+	$(if $(shell test -z "${SECRETSMANAGER_VPC_ENDPOINT_ID}" && echo true),\
+		$(call blue, "No Secrets Manager VPC endpoint found. Deployment will create a new one in ${PRIVATE_SUBNET_ID}."),\
+		$(call blue, "VPC endpoint for Secrets Manager found: ${SECRETSMANAGER_VPC_ENDPOINT_ID}. Deployment will use this one.")\
+	)
+	$(MAKE) service.deploy USE_PRIVATE_SUBNET=${USE_PRIVATE_SUBNET} SSM_VPC_ENDPOINT_ID=${SSM_VPC_ENDPOINT_ID} SECRETSMANAGER_VPC_ENDPOINT_ID=${SECRETSMANAGER_VPC_ENDPOINT_ID}
 	$(MAKE) service.monitoring.create-subscriptions
 
 service.deploy.update-dns:
@@ -35,9 +88,44 @@ service.deploy.update-dns:
 	echo "Response:" && \
 	echo $$res | jq -r
 
+service.deploy.update-vpc-endpoints:
+ifeq ($(CREATE_SSM_ENDPOINT),false)
+	$(MAKE) service.deploy.update-vpc-endpoint service=ssm
+endif
+ifeq ($(CREATE_SECRETSMANAGER_ENDPOINT),false)
+	$(MAKE) service.deploy.update-vpc-endpoint service=secretsmanager
+endif
+
+# TODO get endpoint id from env vars, --filter "Name=subnet-id,Values=$${PRIVATE_SUBNET_ID}" does not work
+# the vpc endpoint must match PRIVATE_SUBNET_ID env var
+service.deploy.update-vpc-endpoint: #service=<string[ssm,secretsmanager]>
+	@echo "\033[0;34m$$(gdate -u +'%Y-%m-%d %H:%M:%S.%3N') - Adding security group to $${service} VPC endpoint\033[0m" 2>&1 | tee -a $${CFN_LOG_PATH}
+	@endpoint_json=$$(aws ec2 describe-vpc-endpoints | jq 'del(.VpcEndpoints[].PolicyDocument)') && \
+	endpoint_id=$$(echo $$endpoint_json | jq -r --arg subnet "$${PRIVATE_SUBNET_ID}" '.VpcEndpoints[] | select(.SubnetIds[] == $$subnet) .VpcEndpointId') && \
+	if [ -z "$$endpoint_id" ]; then \
+		echo "\033[0;31m$${service} VPC endpoint is not associated with \`PRIVATE_SUBNET_ID\` ($${PRIVATE_SUBNET_ID})\033[0m" && exit 1; \
+	fi; \
+	[ "$${service}" = "ssm" ] && endpoint_id=$$SSM_ENDPOINT_ID; \
+	[ "$${service}" = "secretsmanager" ] && endpoint_id=$$SECRETSMANAGER_ENDPOINT_ID; \
+	echo "\033[0;32mFound VPC endpoint ID: $$endpoint_id" && \
+	security_group_id=$$(aws ssm get-parameters \
+		--names "/$${APP_NAME}/$${STAGE}/$${AWS_REGION}/Neo4jDatabaseSecurityGroupId" \
+		--with-decryption \
+		--query "Parameters[0].Value" \
+		--output text) && \
+	echo "Found security group ID: $$security_group_id" && \
+	response=$$(aws ec2 modify-vpc-endpoint \
+		--vpc-endpoint-id "$$endpoint_id" \
+		--add-security-group-ids "$$security_group_id" | jq -r '.Return') && \
+	[ "$$response" = "true" ] && echo "\033[0;34mSuccessfully added security group to $${service} VPC endpoint\033[0m" || \
+	(echo "\033[0;31mFailed to add security group to $${service} VPC endpoint\033[0m" && exit 1)
+
 # TODO test AWSCLI output and validate the stack was created successfully
-service.deploy: #CREATE_VPC=<bool> USE_PRIVATE_SUBNET=<bool> SUBNET_ID=<string>
+service.deploy: #=> USE_PRIVATE_SUBNET=<bool> SSM_ENDPOINT_ID=<string> SECRETSMANAGER_ENDPOINT_ID=<string>
 	@echo "$$(gdate -u +'%Y-%m-%d %H:%M:%S.%3N') - Deploying CloudFormation" 2>&1 | tee -a $${CFN_LOG_PATH}
+	@echo "USE_PRIVATE_SUBNET: $${USE_PRIVATE_SUBNET}"
+	@echo "SSM_VPC_ENDPOINT_ID: $${SSM_VPC_ENDPOINT_ID}"
+	@echo "SECRETSMANAGER_VPC_ENDPOINT_ID: $${SECRETSMANAGER_VPC_ENDPOINT_ID}"
 	@aws cloudformation deploy \
 		--region $${AWS_REGION} \
 		--template-file template.yaml \
@@ -48,8 +136,8 @@ service.deploy: #CREATE_VPC=<bool> USE_PRIVATE_SUBNET=<bool> SUBNET_ID=<string>
 			AppName="$${APP_NAME}" \
 			createVpc="$${CREATE_VPC}" \
 			usePrivateSubnet="$${USE_PRIVATE_SUBNET}" \
-			createSsmVpcEndpoint="$${CREATE_SSM_VPC_ENDPOINT}" \
-			createSecretsManagerVpcEndpoint="$${CREATE_SECRETS_MANAGER_VPC_ENDPOINT}" \
+			SsmVpcEndpointId="$${SSM_VPC_ENDPOINT_ID}" \
+			SecretsManagerVpcEndpointId="$${SECRETSMANAGER_VPC_ENDPOINT_ID}" \
 			VpcId="$${VPC_ID}" \
 			PublicSubnetId="$${PUBLIC_SUBNET_ID}" \
 			PrivateSubnetId="$${PRIVATE_SUBNET_ID}" \
@@ -57,7 +145,7 @@ service.deploy: #CREATE_VPC=<bool> USE_PRIVATE_SUBNET=<bool> SUBNET_ID=<string>
 			DataBucketName="$$DATA_BUCKET_NAME" \
 			GitHubPersonalAccessToken="$$GITHUB_PERSONAL_ACCESS_TOKEN" \
 			2>&1 | tee -a $${CFN_LOG_PATH} || true
-	# $(MAKE) service.deploy.update-dns
+	# $(MAKE) service.deploy.update-vpc-endpoints
 
 service.monitoring.create-subscriptions:
 	@echo "$$(gdate -u +'%Y-%m-%d %H:%M:%S.%3N') - Creating SNS topic subscriptions" 2>&1 | tee -a $${CFN_LOG_PATH}
