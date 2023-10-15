@@ -10,7 +10,10 @@ export
 export AWS_ACCOUNT ?= $(shell aws sts get-caller-identity \
 	--query Account \
 	--output text)
-
+export HAS_STAGE := $(shell aws ssm get-parameters \
+		--names "/${APP_NAME}/${STAGE}/${AWS_REGION}/Stage" \
+		--output json \
+		| jq -r '.Parameters[0].Value')
 export ROOT_DIR := $(shell pwd)
 export DATABASE_DIR := ${ROOT_DIR}/${APP_NAME}/database
 export INFRA_DIR := ${ROOT_DIR}/${APP_NAME}/infrastructure

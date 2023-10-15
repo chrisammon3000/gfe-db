@@ -34,9 +34,10 @@ define red
 endef
 
 # VPC_ID, USE_PRIVATE_SUBNET, PUBLIC_SUBNET_ID and PRIVATE_SUBNET_ID are validated in the root Makefile
-# TODO when CREATE_VPC=false, run target to find existing VPC Endpoint Ids to determine CREATE_SSM_VPC_ENDPOINT and CREATE_SECRETS_MANAGER_VPC_ENDPOINT
+# TODO Make sure this doesn't confuse an already deployed endpoint that is part of this stack, with a previously existing endpoint that is not part of this stack
 deploy: 
 	@echo "$$(gdate -u +'%Y-%m-%d %H:%M:%S.%3N') - Deploying ${SERVICE} service" 2>&1 | tee -a $${CFN_LOG_PATH}
+	$(call blue, "HAS_STAGE: ${HAS_STAGE}")
 ifeq ($(CREATE_VPC),false)
 ifndef PRIVATE_SUBNET_ID
 	$(eval USE_PRIVATE_SUBNET := false)
@@ -59,6 +60,8 @@ ifdef PRIVATE_SUBNET_ID
 		jq -r '.VpcEndpointId'))
 endif
 endif
+	$(call blue, "HAS_STAGE: ${HAS_STAGE}")
+ifeq ($(HAS_STAGE),null)
 	$(info SSM_VPC_ENDPOINT_ID: ${SSM_VPC_ENDPOINT_ID})
 	$(info SECRETSMANAGER_VPC_ENDPOINT_ID: ${SECRETSMANAGER_VPC_ENDPOINT_ID})
 	$(if $(shell test -z "${SSM_VPC_ENDPOINT_ID}" && echo true),\
@@ -70,7 +73,13 @@ endif
 		$(call blue, "VPC endpoint for Secrets Manager found: ${SECRETSMANAGER_VPC_ENDPOINT_ID}. Deployment will use this one.")\
 	)
 	$(MAKE) service.deploy USE_PRIVATE_SUBNET=${USE_PRIVATE_SUBNET} SSM_VPC_ENDPOINT_ID=${SSM_VPC_ENDPOINT_ID} SECRETSMANAGER_VPC_ENDPOINT_ID=${SECRETSMANAGER_VPC_ENDPOINT_ID}
-	$(MAKE) service.monitoring.create-subscriptions
+	$(if $(shell test -z "${SSM_VPC_ENDPOINT_ID}" && echo true),,$(MAKE) service.deploy.update-vpc-endpoint service=ssm endpoint_id=${SSM_VPC_ENDPOINT_ID})
+	$(if $(shell test -z "${SECRETSMANAGER_VPC_ENDPOINT_ID}" && echo true),,$(MAKE) service.deploy.update-vpc-endpoint service=secretsmanager endpoint_id=${SECRETSMANAGER_VPC_ENDPOINT_ID})
+else 
+	$(call blue, "HAS_STAGE: ${HAS_STAGE}; Updating stack")
+	$(MAKE) service.deploy USE_PRIVATE_SUBNET=${USE_PRIVATE_SUBNET}
+endif
+	# $(MAKE) service.monitoring.create-subscriptions
 
 service.deploy.update-dns:
 	@echo "$$(gdate -u +'%Y-%m-%d %H:%M:%S.%3N') - Updating DNS records" 2>&1 | tee -a $${CFN_LOG_PATH}
@@ -88,31 +97,26 @@ service.deploy.update-dns:
 	echo "Response:" && \
 	echo $$res | jq -r
 
-service.deploy.update-vpc-endpoints:
-ifeq ($(CREATE_SSM_ENDPOINT),false)
-	$(MAKE) service.deploy.update-vpc-endpoint service=ssm
-endif
-ifeq ($(CREATE_SECRETSMANAGER_ENDPOINT),false)
-	$(MAKE) service.deploy.update-vpc-endpoint service=secretsmanager
-endif
+# service.deploy.update-vpc-endpoints:
+# ifeq ($(CREATE_SSM_ENDPOINT),false)
+# 	$(MAKE) service.deploy.update-vpc-endpoint service=ssm endpoint_id=${SSM_VPC_ENDPOINT_ID}
+# endif
+# ifeq ($(CREATE_SECRETSMANAGER_ENDPOINT),false)
+# 	$(MAKE) service.deploy.update-vpc-endpoint service=secretsmanager endpoint_id=${SECRETSMANAGER_VPC_ENDPOINT_ID}
+# endif
 
-# TODO get endpoint id from env vars, --filter "Name=subnet-id,Values=$${PRIVATE_SUBNET_ID}" does not work
 # the vpc endpoint must match PRIVATE_SUBNET_ID env var
 service.deploy.update-vpc-endpoint: #service=<string[ssm,secretsmanager]>
 	@echo "\033[0;34m$$(gdate -u +'%Y-%m-%d %H:%M:%S.%3N') - Adding security group to $${service} VPC endpoint\033[0m" 2>&1 | tee -a $${CFN_LOG_PATH}
-	@endpoint_json=$$(aws ec2 describe-vpc-endpoints | jq 'del(.VpcEndpoints[].PolicyDocument)') && \
-	endpoint_id=$$(echo $$endpoint_json | jq -r --arg subnet "$${PRIVATE_SUBNET_ID}" '.VpcEndpoints[] | select(.SubnetIds[] == $$subnet) .VpcEndpointId') && \
-	if [ -z "$$endpoint_id" ]; then \
-		echo "\033[0;31m$${service} VPC endpoint is not associated with \`PRIVATE_SUBNET_ID\` ($${PRIVATE_SUBNET_ID})\033[0m" && exit 1; \
-	fi; \
-	[ "$${service}" = "ssm" ] && endpoint_id=$$SSM_ENDPOINT_ID; \
-	[ "$${service}" = "secretsmanager" ] && endpoint_id=$$SECRETSMANAGER_ENDPOINT_ID; \
-	echo "\033[0;32mFound VPC endpoint ID: $$endpoint_id" && \
-	security_group_id=$$(aws ssm get-parameters \
+	@echo "$$endpoint_id"
+	@[ "$$endpoint_id" = "" ] && $$(echo "\033[0;31mFailed to get $${service} VPC endpoint ID\033[0m" && exit 1) || \
+	echo "\033[0;34mUpdating $${service} VPC endpoint ID: $$endpoint_id\033[0m"
+	@security_group_id=$$(aws ssm get-parameters \
 		--names "/$${APP_NAME}/$${STAGE}/$${AWS_REGION}/Neo4jDatabaseSecurityGroupId" \
 		--with-decryption \
 		--query "Parameters[0].Value" \
 		--output text) && \
+	[ "$$security_group_id" = "None" ] && $$(echo "\033[0;31mFailed to get security group ID\033[0m" && exit 1) || \
 	echo "Found security group ID: $$security_group_id" && \
 	response=$$(aws ec2 modify-vpc-endpoint \
 		--vpc-endpoint-id "$$endpoint_id" \
