@@ -34,34 +34,20 @@ define red
 endef
 
 # VPC_ID, USE_PRIVATE_SUBNET, PUBLIC_SUBNET_ID and PRIVATE_SUBNET_ID are validated in the root Makefile
-# TODO Make sure this doesn't confuse an already deployed endpoint that is part of this stack, with a previously existing endpoint that is not part of this stack
+# TODO test using env vars for endpoint IDs, currently blocked by conflicting DNS in VPC. Using static env vars should not change cfn conditions between deployments
 deploy: 
 	@echo "$$(gdate -u +'%Y-%m-%d %H:%M:%S.%3N') - Deploying ${SERVICE} service" 2>&1 | tee -a $${CFN_LOG_PATH}
-	$(call blue, "HAS_STAGE: ${HAS_STAGE}")
+	$(call blue, "HAS_DEPLOYED_STAGE: ${HAS_DEPLOYED_STAGE}")
 ifeq ($(CREATE_VPC),false)
 ifndef PRIVATE_SUBNET_ID
 	$(eval USE_PRIVATE_SUBNET := false)
 endif
 ifdef PRIVATE_SUBNET_ID
 	$(eval USE_PRIVATE_SUBNET := true)
-	$(eval SSM_VPC_ENDPOINT_ID := $$(shell aws ec2 describe-vpc-endpoints | \
-		jq -r 'del(.VpcEndpoints[].PolicyDocument)' | \
-		jq '.VpcEndpoints[] | \
-		select(.ServiceName == "com.amazonaws.us-east-1.ssm" and \
-		.VpcEndpointType == "Interface" and \
-		any(.SubnetIds[]; . == "${PRIVATE_SUBNET_ID}"))' | \
-		jq -r '.VpcEndpointId'))
-	$(eval SECRETSMANAGER_VPC_ENDPOINT_ID := $$(shell aws ec2 describe-vpc-endpoints | \
-		jq -r 'del(.VpcEndpoints[].PolicyDocument)' | \
-		jq '.VpcEndpoints[] | \
-		select(.ServiceName == "com.amazonaws.us-east-1.secretsmanager" and \
-		.VpcEndpointType == "Interface" and \
-		any(.SubnetIds[]; . == "${PRIVATE_SUBNET_ID}"))' | \
-		jq -r '.VpcEndpointId'))
 endif
 endif
-	$(call blue, "HAS_STAGE: ${HAS_STAGE}")
-ifeq ($(HAS_STAGE),null)
+	$(call blue, "HAS_DEPLOYED_STAGE: ${HAS_DEPLOYED_STAGE}")
+ifeq ($(HAS_DEPLOYED_STAGE),null)
 	$(info SSM_VPC_ENDPOINT_ID: ${SSM_VPC_ENDPOINT_ID})
 	$(info SECRETSMANAGER_VPC_ENDPOINT_ID: ${SECRETSMANAGER_VPC_ENDPOINT_ID})
 	$(if $(shell test -z "${SSM_VPC_ENDPOINT_ID}" && echo true),\
@@ -76,8 +62,8 @@ ifeq ($(HAS_STAGE),null)
 	$(if $(shell test -z "${SSM_VPC_ENDPOINT_ID}" && echo true),,$(MAKE) service.deploy.update-vpc-endpoint service=ssm endpoint_id=${SSM_VPC_ENDPOINT_ID})
 	$(if $(shell test -z "${SECRETSMANAGER_VPC_ENDPOINT_ID}" && echo true),,$(MAKE) service.deploy.update-vpc-endpoint service=secretsmanager endpoint_id=${SECRETSMANAGER_VPC_ENDPOINT_ID})
 else 
-	$(call blue, "HAS_STAGE: ${HAS_STAGE}; Updating stack")
-	$(MAKE) service.deploy USE_PRIVATE_SUBNET=${USE_PRIVATE_SUBNET}
+	$(call blue, "HAS_DEPLOYED_STAGE: ${HAS_DEPLOYED_STAGE}; Updating deployed stack")
+	$(MAKE) service.deploy USE_PRIVATE_SUBNET=${USE_PRIVATE_SUBNET} SSM_VPC_ENDPOINT_ID=${SSM_VPC_ENDPOINT_ID} SECRETSMANAGER_VPC_ENDPOINT_ID=${SECRETSMANAGER_VPC_ENDPOINT_ID}
 endif
 	# $(MAKE) service.monitoring.create-subscriptions
 
