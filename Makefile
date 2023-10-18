@@ -10,7 +10,7 @@ export
 export AWS_ACCOUNT ?= $(shell aws sts get-caller-identity \
 	--query Account \
 	--output text)
-export HAS_STAGE := $(shell aws ssm get-parameters \
+export HAS_DEPLOYED_STAGE := $(shell aws ssm get-parameters \
 		--names "/${APP_NAME}/${STAGE}/${AWS_REGION}/Stage" \
 		--output json \
 		| jq -r '.Parameters[0].Value')
@@ -139,12 +139,7 @@ check.dependencies.jq:
 # TODO use cloudformation list-stacks as alternative to SSM parameter
 # Checks if the stage is already deployed
 env.validate.stage:
-	@res=$$(aws ssm get-parameters \
-		--names "/${APP_NAME}/${STAGE}/${AWS_REGION}/Stage" \
-		--output json \
-		| jq -r '.Parameters[0].Value') && \
-	[[ $$res = "null" ]] && echo "No deployed stage found" || echo "Found deployed stage: $$res" && \
-	if [ "$${res}" = "null" ]; then \
+	@if [ "${HAS_DEPLOYED_STAGE}" = "null" ]; then \
 		echo "\033[0;34m**** Starting new deployment. ****\033[0m"; \
 	elif [ "$${res}" = "${STAGE}" ]; then \
 		echo "\033[0;34m**** Found existing deployment for \`${STAGE}\` ****\033[0m"; \
@@ -153,6 +148,21 @@ env.validate.stage:
 		echo "\033[0;31m**** Please refer to the documentation for a list of prerequisites. ****\033[0m" && \
 		exit 1; \
 	fi
+
+# @res=$$(aws ssm get-parameters \
+# 	--names "/${APP_NAME}/${STAGE}/${AWS_REGION}/Stage" \
+# 	--output json \
+# 	| jq -r '.Parameters[0].Value') && \
+# [[ $$res = "null" ]] && echo "No deployed stage found" || echo "Found deployed stage: $$res" && \
+# if [ "$${res}" = "null" ]; then \
+# 	echo "\033[0;34m**** Starting new deployment. ****\033[0m"; \
+# elif [ "$${res}" = "${STAGE}" ]; then \
+# 	echo "\033[0;34m**** Found existing deployment for \`${STAGE}\` ****\033[0m"; \
+# else \
+# 	echo "\033[0;31m**** STAGE mismatch or bad credential configuration. ****\033[0m" && \
+# 	echo "\033[0;31m**** Please refer to the documentation for a list of prerequisites. ****\033[0m" && \
+# 	exit 1; \
+# fi
 
 # if CREATE_VPC is true, USE_PRIVATE_SUBNET must be true or false
 # if CREATE_VPC is false, VPC_ID and PUBLIC_SUBNET_ID must be set, PRIVATE_SUBNET_ID is optional
