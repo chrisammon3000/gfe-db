@@ -14,6 +14,7 @@ export HAS_DEPLOYED_STAGE := $(shell aws ssm get-parameters \
 		--names "/${APP_NAME}/${STAGE}/${AWS_REGION}/Stage" \
 		--output json \
 		| jq -r '.Parameters[0].Value')
+export UPDATE_VPC_ENDPOINT_SECURITY_GROUPS ?= 
 export ROOT_DIR := $(shell pwd)
 export DATABASE_DIR := ${ROOT_DIR}/${APP_NAME}/database
 export INFRA_DIR := ${ROOT_DIR}/${APP_NAME}/infrastructure
@@ -176,7 +177,6 @@ ifndef USE_PRIVATE_SUBNET
 else
 	$(call green, "USE_PRIVATE_SUBNET is set to ${USE_PRIVATE_SUBNET}")
 endif
-
 ifdef VPC_ID
 	$(call red, "VPC_ID must not be set if CREATE_VPC is true")
 	@exit 1
@@ -212,17 +212,35 @@ else
 endif
 endif
 
+env.validate.create-vpc-endpoints:
+ifeq ($(CREATE_SSM_ENDPOINT),false)
+ifndef UPDATE_VPC_ENDPOINT_SECURITY_GROUPS
+	$(call red, "UPDATE_VPC_ENDPOINT_SECURITY_GROUPS must be set if CREATE_SSM_ENDPOINT is false")
+	@exit 1
+endif
+endif
+ifeq ($(CREATE_SECRETSMANAGER_ENDPOINT),false)
+ifndef UPDATE_VPC_ENDPOINT_SECURITY_GROUPS
+	$(call red, "UPDATE_VPC_ENDPOINT_SECURITY_GROUPS must be set if CREATE_SSM_ENDPOINT is false")
+	@exit 1
+endif
+endif
+ifdef UPDATE_VPC_ENDPOINT_SECURITY_GROUPS
+	$(call green, "UPDATE_VPC_ENDPOINT_SECURITY_GROUPS is set to ${UPDATE_VPC_ENDPOINT_SECURITY_GROUPS}")
+endif
+
 
 env.validate: check.dependencies env.validate.stage
 	$(foreach var,$(REQUIRED_VARS),\
 		$(if $(value $(var)),,$(error $(var) is not set. Please add $(var) to the environment variables.)))
 	$(MAKE) env.validate.create-vpc
+	$(MAKE) env.validate.create-vpc-endpoints
 
 deploy: splash-screen env.validate ##=> Deploy all services
 	@echo "$$(gdate -u +'%Y-%m-%d %H:%M:%S.%3N') - Deploying ${APP_NAME} to ${AWS_ACCOUNT}" 2>&1 | tee -a ${CFN_LOG_PATH}
 	$(MAKE) env.print
 	@echo "Deploy stack to the \`${STAGE}\` environment? [y/N] \c " && read ans && [ $${ans:-N} = y ]
-	$(MAKE) infrastructure.deploy
+	# $(MAKE) infrastructure.deploy
 	# $(MAKE) database.deploy
 	# $(MAKE) pipeline.deploy
 	@echo "$$(gdate -u +'%Y-%m-%d %H:%M:%S.%3N') - Finished deploying ${APP_NAME}" 2>&1 | tee -a ${CFN_LOG_PATH}
