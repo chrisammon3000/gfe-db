@@ -252,7 +252,7 @@ Resources:
       #   - !Ref Neo4jDatabaseSecurityGroup
       SubnetIds:
         - !Ref PrivateSubnetId
-      PrivateDnsEnabled: true
+      # PrivateDnsEnabled: true
 
   # Endpoints are required for VPC Lambda to connect to AWS services using SDKs
   # Private DNS must be enabled which means there can only be one VPC endpoint per service
@@ -267,7 +267,7 @@ Resources:
       #   - !Ref Neo4jDatabaseSecurityGroup
       SubnetIds:
         - !Ref PrivateSubnetId
-      PrivateDnsEnabled: true
+      # PrivateDnsEnabled: true
 
   # Endpoints are required for VPC Lambda to connect to AWS services using SDKs
   # Private DNS must be enabled which means there can only be one VPC endpoint per service
@@ -282,7 +282,7 @@ Resources:
       #   - !Ref Neo4jDatabaseSecurityGroup
       SubnetIds:
         - !Ref CreateAndUsePrivateSubnetConditionPrivateSubnet
-      PrivateDnsEnabled: true
+      # PrivateDnsEnabled: true
 
   # Endpoints are required for VPC Lambda to connect to AWS services using SDKs
   # Private DNS must be enabled which means there can only be one VPC endpoint per service
@@ -297,7 +297,7 @@ Resources:
       #   - !Ref Neo4jDatabaseSecurityGroup
       SubnetIds:
         - !Ref PrivateSubnetId
-      PrivateDnsEnabled: true
+      # PrivateDnsEnabled: true
 
   # Endpoints are required for VPC Lambda to connect to AWS services using SDKs
   # Private DNS must be enabled which means there can only be one VPC endpoint per service
@@ -312,7 +312,7 @@ Resources:
       #   - !Ref Neo4jDatabaseSecurityGroup
       SubnetIds:
         - !Ref PrivateSubnetId
-      PrivateDnsEnabled: true
+      # PrivateDnsEnabled: true
 
   # Endpoints are required for VPC Lambda to connect to AWS services using SDKs
   # Private DNS must be enabled which means there can only be one VPC endpoint per service
@@ -327,7 +327,7 @@ Resources:
       #   - !Ref Neo4jDatabaseSecurityGroup
       SubnetIds:
         - !Ref CreateAndUsePrivateSubnetConditionPrivateSubnet
-      PrivateDnsEnabled: true
+      # PrivateDnsEnabled: true
 
   UseExistingVpcConditionVpcIDParameter:
     Type: AWS::SSM::Parameter

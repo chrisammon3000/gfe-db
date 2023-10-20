@@ -14,7 +14,6 @@ export HAS_DEPLOYED_STAGE := $(shell aws ssm get-parameters \
 		--names "/${APP_NAME}/${STAGE}/${AWS_REGION}/Stage" \
 		--output json \
 		| jq -r '.Parameters[0].Value')
-export UPDATE_VPC_ENDPOINT_SECURITY_GROUPS ?= 
 export ROOT_DIR := $(shell pwd)
 export DATABASE_DIR := ${ROOT_DIR}/${APP_NAME}/database
 export INFRA_DIR := ${ROOT_DIR}/${APP_NAME}/infrastructure
@@ -41,6 +40,11 @@ export INSTANCE_ID := $(shell aws ssm get-parameters \
 export PIPELINE_STATE_PATH := config/IMGTHLA-repository-state.json
 export PIPELINE_PARAMS_PATH := config/pipeline-input.json
 export FUNCTIONS_PATH := ${APP_NAME}/pipeline/functions
+
+# deployment variables
+export SSM_VPC_ENDPOINT_ID ?=
+export SECRETSMANAGER_VPC_ENDPOINT_ID ?=
+export UPDATE_VPC_ENDPOINT_SECURITY_GROUPS ?= 
 
 # Required environment variables
 REQUIRED_VARS := STAGE APP_NAME AWS_ACCOUNT AWS_REGION AWS_PROFILE SUBSCRIBE_EMAILS \
@@ -213,15 +217,17 @@ endif
 endif
 
 env.validate.create-vpc-endpoints:
-ifeq ($(CREATE_SSM_ENDPOINT),false)
+ifdef SSM_VPC_ENDPOINT_ID
+	$(call green, "Found SSM_VPC_ENDPOINT_ID: ${SSM_VPC_ENDPOINT_ID}")
 ifndef UPDATE_VPC_ENDPOINT_SECURITY_GROUPS
-	$(call red, "UPDATE_VPC_ENDPOINT_SECURITY_GROUPS must be set if CREATE_SSM_ENDPOINT is false")
+	$(call red, "UPDATE_VPC_ENDPOINT_SECURITY_GROUPS must be set if SSM_VPC_ENDPOINT_ID is set")
 	@exit 1
 endif
 endif
-ifeq ($(CREATE_SECRETSMANAGER_ENDPOINT),false)
+ifdef SECRETSMANAGER_VPC_ENDPOINT_ID
+	$(call green, "Found SECRETSMANAGER_VPC_ENDPOINT_ID: ${SECRETSMANAGER_VPC_ENDPOINT_ID}")
 ifndef UPDATE_VPC_ENDPOINT_SECURITY_GROUPS
-	$(call red, "UPDATE_VPC_ENDPOINT_SECURITY_GROUPS must be set if CREATE_SSM_ENDPOINT is false")
+	$(call red, "UPDATE_VPC_ENDPOINT_SECURITY_GROUPS must be set if SECRETSMANAGER_VPC_ENDPOINT_ID is set")
 	@exit 1
 endif
 endif
@@ -240,7 +246,7 @@ deploy: splash-screen env.validate ##=> Deploy all services
 	@echo "$$(gdate -u +'%Y-%m-%d %H:%M:%S.%3N') - Deploying ${APP_NAME} to ${AWS_ACCOUNT}" 2>&1 | tee -a ${CFN_LOG_PATH}
 	$(MAKE) env.print
 	@echo "Deploy stack to the \`${STAGE}\` environment? [y/N] \c " && read ans && [ $${ans:-N} = y ]
-	# $(MAKE) infrastructure.deploy
+	$(MAKE) infrastructure.deploy
 	# $(MAKE) database.deploy
 	# $(MAKE) pipeline.deploy
 	@echo "$$(gdate -u +'%Y-%m-%d %H:%M:%S.%3N') - Finished deploying ${APP_NAME}" 2>&1 | tee -a ${CFN_LOG_PATH}

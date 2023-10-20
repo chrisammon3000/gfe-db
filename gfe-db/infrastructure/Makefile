@@ -59,8 +59,12 @@ ifeq ($(HAS_DEPLOYED_STAGE),null)
 		$(call blue, "VPC endpoint for Secrets Manager found: ${SECRETSMANAGER_VPC_ENDPOINT_ID}. Deployment will use this one.")\
 	)
 	$(MAKE) service.deploy USE_PRIVATE_SUBNET=${USE_PRIVATE_SUBNET} SSM_VPC_ENDPOINT_ID=${SSM_VPC_ENDPOINT_ID} SECRETSMANAGER_VPC_ENDPOINT_ID=${SECRETSMANAGER_VPC_ENDPOINT_ID}
+ifeq ($(UPDATE_VPC_ENDPOINT_SECURITY_GROUPS),true)
 	$(if $(shell test -z "${SSM_VPC_ENDPOINT_ID}" && echo true),,$(MAKE) service.deploy.update-vpc-endpoint service=ssm endpoint_id=${SSM_VPC_ENDPOINT_ID})
 	$(if $(shell test -z "${SECRETSMANAGER_VPC_ENDPOINT_ID}" && echo true),,$(MAKE) service.deploy.update-vpc-endpoint service=secretsmanager endpoint_id=${SECRETSMANAGER_VPC_ENDPOINT_ID})
+else ifeq ($(UPDATE_VPC_ENDPOINT_SECURITY_GROUPS),false)
+	$(call yellow, Skipping update of VPC endpoint security groups. The security group for the Neo4j server must be added manually.)
+endif
 else 
 	$(call blue, "HAS_DEPLOYED_STAGE: ${HAS_DEPLOYED_STAGE}; Updating deployed stack")
 	$(MAKE) service.deploy USE_PRIVATE_SUBNET=${USE_PRIVATE_SUBNET} SSM_VPC_ENDPOINT_ID=${SSM_VPC_ENDPOINT_ID} SECRETSMANAGER_VPC_ENDPOINT_ID=${SECRETSMANAGER_VPC_ENDPOINT_ID}
