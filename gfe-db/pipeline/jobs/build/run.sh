@@ -121,17 +121,18 @@ for release in ${RELEASES}; do
 		echo "DAT file for release $release already exists"
 	else
 		echo "Downloading DAT file for release $release..."
-		if [ "$(echo "$release" | bc -l)" -lt 3350  ]; then
+		# if [ "$(echo "$release" | bc -l)" -lt 3350  ]; then
 
-			# Should be environment variable
-			imgt_hla_raw_url='https://raw.githubusercontent.com/ANHIG/IMGTHLA'
-			echo "Downloading $imgt_hla_raw_url/$release/hla.dat to $DATA_DIR/$release/hla.$release.dat"
-			curl -SL "$imgt_hla_raw_url/$release/hla.dat" > "$DATA_DIR/$release/hla.$release.dat"
-		else
-			imgt_hla_media_url='https://media.githubusercontent.com/media/ANHIG/IMGTHLA'
-			echo "Downloading $imgt_hla_media_url/$release/hla.dat to $DATA_DIR/$release/hla.$release.dat"
-			curl -SL "$imgt_hla_media_url/$release/hla.dat" > "$DATA_DIR/$release/hla.$release.dat"
-		fi
+		# 	# Should be environment variable
+		# 	imgt_hla_raw_url='https://raw.githubusercontent.com/ANHIG/IMGTHLA'
+		# 	echo "Downloading $imgt_hla_raw_url/$release/hla.dat to $DATA_DIR/$release/hla.$release.dat"
+		# 	curl -SL "$imgt_hla_raw_url/$release/hla.dat" > "$DATA_DIR/$release/hla.$release.dat"
+		# else
+		# 	imgt_hla_media_url='https://media.githubusercontent.com/media/ANHIG/IMGTHLA'
+		# 	echo "Downloading $imgt_hla_media_url/$release/hla.dat to $DATA_DIR/$release/hla.$release.dat"
+		# 	curl -SL "$imgt_hla_media_url/$release/hla.dat" > "$DATA_DIR/$release/hla.$release.dat"
+		# fi
+        aws s3 cp s3://$GFE_BUCKET/data/$release/hla.dat $DATA_DIR/$release/hla.$release.dat
 	fi
 	
 	# Builds CSV files
