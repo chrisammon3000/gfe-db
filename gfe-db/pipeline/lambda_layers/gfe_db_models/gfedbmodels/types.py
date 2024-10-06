@@ -204,10 +204,13 @@ class RepositoryConfig(BaseModel):
 
 class ExecutionDetailsConfig(BaseModel):
     id: str = (
-        None  # Refers to execution id in Step Functions and is only set if the commit is processed
+        None  # Refers to execution id for Update Pipeline and is only set if the commit is processed
     )
     invocation_id: str = (
-        None  # One invocation can have multiple executions depending on how many release versions are given
+        None  # One invocation (or request) can have multiple executions depending on how many release versions are given
+    )
+    lcm_execution_arn: str = (
+        None  # Refers to execution id for Load Concurrency Manager and is only set when the LCM processes the SQS message
     )
     version: int
     status: str

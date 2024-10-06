@@ -37,7 +37,7 @@
                 {
                     "Variable": "$.sqs.MessageId",
                     "IsPresent": true,
-                    "Next": "Handle Load Query Execution"
+                    "Next": "Register Execution for Release"
                 }
             ],
             "Default": "Wait for Message"
@@ -46,6 +46,32 @@
             "Type": "Wait",
             "Seconds": 30,
             "Next": "Check Alarm State"
+        },
+        "Register Execution for Release": {
+            "Type": "Task",
+            "Resource": "arn:aws:states:::aws-sdk:dynamodb:updateItem",
+            "ResultPath": null,
+            "Parameters": {
+                "TableName": "${GfeDbExecutionStateTable}",
+                "Key": {
+                    "commit__sha": {
+                        "S.$": "$.sqs.Body.input.commit_sha"
+                    },
+                    "execution__version": {
+                        "N.$": "States.Format('{}', $.sqs.Body.input.version)"
+                    }
+                },
+                "UpdateExpression": "SET execution__lcm_execution_arn = :lcm_execution_arn, updated_utc = :updated_utc",
+                "ExpressionAttributeValues": {
+                    ":lcm_execution_arn": {
+                        "S.$": "$$.Execution.Id"
+                    },
+                    ":updated_utc": {
+                        "S.$": "$$.State.EnteredTime"
+                    }
+                }
+            },
+            "Next": "Handle Load Query Execution"
         },
         "Handle Load Query Execution": {
             "Type": "Parallel",
