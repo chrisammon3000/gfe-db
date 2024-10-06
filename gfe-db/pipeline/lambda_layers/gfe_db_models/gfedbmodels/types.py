@@ -15,6 +15,7 @@ class ExecutionStatus(str, Enum):
     PENDING: state machine execution started (set by CheckSourceUpdate) ✅
     BUILD_IN_PROGRESS: build started (set by State Machine) ✅
     BUILD_SUCCESS: build succeeded (set by State Machine) ✅
+    LOAD_QUEUED: load queued (set by State Machine) ✅
     LOAD_IN_PROGRESS: load started (set by State Machine) ✅
     LOAD_SUCCESS: load succeeded (set by State Machine) ✅
     LOAD_FAILED: load failed (set by State Machine) ✅
@@ -31,6 +32,7 @@ class ExecutionStatus(str, Enum):
     BUILD_IN_PROGRESS = "BUILD_IN_PROGRESS"
     BUILD_SUCCESS = "BUILD_SUCCESS"
     BUILD_FAILED = "BUILD_FAILED"
+    LOAD_QUEUED = "LOAD_QUEUED"
     LOAD_IN_PROGRESS = "LOAD_IN_PROGRESS"
     LOAD_COMPLETE = "LOAD_COMPLETE"
     LOAD_SUCCESS = "LOAD_SUCCESS"

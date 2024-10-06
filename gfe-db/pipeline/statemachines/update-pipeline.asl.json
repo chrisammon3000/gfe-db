@@ -248,7 +248,7 @@
                     "Next": "Handle Skipped Load"
                 }
             ],
-            "Default": "Update Status → LOAD_IN_PROGRESS"
+            "Default": "Load Stage"
         },
         "Handle Skipped Load": {
             "Type": "Parallel",
@@ -301,12 +301,6 @@
             ],
             "Next": "Format Results"
         },
-        "Update Status → LOAD_IN_PROGRESS": {
-            "Type": "Pass",
-            "Result": "LOAD_IN_PROGRESS",
-            "ResultPath": "$.state.execution.status",
-            "Next": "Load Stage"
-        },
         "Load Stage": {
             "Type": "Parallel",
             "OutputPath": "$.[1]",
@@ -321,9 +315,15 @@
             ],
             "Branches": [
                 {
-                    "StartAt": "Sync Status → LOAD_IN_PROGRESS",
+                    "StartAt": "Update Status → LOAD_QUEUED",
                     "States": {
-                        "Sync Status → LOAD_IN_PROGRESS": {
+                        "Update Status → LOAD_QUEUED": {
+                            "Type": "Pass",
+                            "Result": "LOAD_QUEUED",
+                            "ResultPath": "$.state.execution.status",
+                            "Next": "Sync Status → LOAD_QUEUED"
+                        },
+                        "Sync Status → LOAD_QUEUED": {
                             "Type": "Task",
                             "Resource": "arn:aws:states:::dynamodb:updateItem",
                             "ResultPath": null,
@@ -352,19 +352,8 @@
                     }
                 },
                 {
-                    "StartAt": "Append Execution Id",
+                    "StartAt": "Queue Load",
                     "States": {
-                        "Append Execution Id": {
-                            "Type": "Pass",
-                            "Parameters": {
-                                "input.$": "$.input",
-                                "validations.$": "$.validations",
-                                "state.$": "$.state",
-                                "execution_arn.$": "$$.Execution.Id"
-                            },
-                            "ResultPath": "$",
-                            "Next": "Queue Load"
-                        },
                         "Queue Load": {
                             "Type": "Task",
                             "Resource": "arn:aws:states:::aws-sdk:sqs:sendMessage",
@@ -375,9 +364,31 @@
                                 "MessageBody.$": "$"
                             },
                             "ResultPath": null,
-                            "Next": "Wait for Load Status"
+                            "Next": "Wait for Load Start"
                         },
-                        "Wait for Load Status": {
+                        "Wait for Load Start": {
+                            "Type": "Wait",
+                            "Seconds": 60,
+                            "Next": "Refresh State"
+                        },
+                        "Refresh State": {
+                            "Type": "Task",
+                            "Resource": "${GetExecutionStateFunctionArn}",
+                            "ResultPath": "$.state",
+                            "Next": "Is Load In Progress❓"
+                        },
+                        "Is Load In Progress❓": {
+                            "Type": "Choice",
+                            "Choices": [
+                                {
+                                    "Variable": "$.state.execution.lcm_execution_arn",
+                                    "IsPresent": true,
+                                    "Next": "Wait for Load Finish"
+                                }
+                            ],
+                            "Default": "Wait for Load Start"
+                        },
+                        "Wait for Load Finish": {
                             "Type": "Wait",
                             "Seconds": 60,
                             "Next": "Check Status"
@@ -402,7 +413,7 @@
                                     "Next": "Fail Load"
                                 }
                             ],
-                            "Default": "Wait for Load Status"
+                            "Default": "Wait for Load Finish"
                         },
                         "Fail Load": {
                             "Type": "Fail",
