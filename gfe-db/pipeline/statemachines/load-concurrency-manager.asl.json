@@ -106,7 +106,7 @@
                         "Watch Load Command": {
                             "Type": "Parallel",
                             "OutputPath": "$.[0]",
-                            "Next": "Delete Message from Load Queue",
+                            "Next": "Evaluate Load Command Result",
                             "Catch": [
                                 {
                                     "ErrorEquals": ["States.ALL"],
@@ -134,9 +134,7 @@
                                             "ResultSelector": {
                                                 "CommandId.$": "$.CommandInvocations[0].CommandId",
                                                 "InstanceId.$": "$.CommandInvocations[0].InstanceId",
-                                                "Status.$": "$.CommandInvocations[0].Status",
-                                                "StandardOutputContent.$": "$.CommandInvocations[0].StandardOutputUrl",
-                                                "StandardErrorContent.$": "$.CommandInvocations[0].StandardErrorUrl"
+                                                "Status.$": "$.CommandInvocations[0].Status"
                                             },
                                             "ResultPath": "$.ssm",
                                             "Retry": [
@@ -166,12 +164,12 @@
                                                             "StringEquals": "TimedOut"
                                                         }
                                                     ],
-                                                    "Next": "Load Failed"
+                                                    "Next": "Fetch Error Log"
                                                 },
                                                 {
                                                     "Variable": "$.ssm.Status",
                                                     "StringEquals": "Success",
-                                                    "Next": "Load Complete"
+                                                    "Next": "Load Command Complete"
                                                 }
                                             ],
                                             "Default": "Wait for Status"
@@ -181,18 +179,41 @@
                                             "Seconds": 60,
                                             "Next": "Get Load Command Status"
                                         },
-                                        "Load Complete": {
+                                        "Load Command Complete": {
                                             "Type": "Pass",
                                             "ResultPath": null,
                                             "End": true
                                         },
-                                        "Load Failed": {
-                                            "Type": "Fail",
-                                            "Cause": "LOAD_FAILED"
+                                        "Fetch Error Log": {
+                                            "Type": "Task",
+                                            "Resource": "arn:aws:states:::aws-sdk:ssm:getCommandInvocation",
+                                            "Parameters": {
+                                                "CommandId.$": "$.ssm.CommandId",
+                                                "InstanceId.$": "$.ssm.InstanceId",
+                                                "PluginName": "runShellScript"
+                                            },
+                                            "ResultSelector": {
+                                                "Status.$": "$.Status",
+                                                "StandardOutputContent.$": "$.StandardOutputContent",
+                                                "StandardErrorContent.$": "$.StandardErrorContent"
+                                            },
+                                            "ResultPath": "$.ssm",
+                                            "Next": "Load Command Complete"
                                         }
                                     }
                                 }
                             ]
+                        },
+                        "Evaluate Load Command Result": {
+                            "Type": "Choice",
+                            "Choices": [
+                                {
+                                    "Variable": "$.ssm.Status",
+                                    "StringEquals": "Success",
+                                    "Next": "Delete Message from Load Queue"
+                                }
+                            ],
+                            "Default": "Return Message to Load Queue"
                         },
                         "Return Message to Load Queue": {
                             "Type": "Task",
