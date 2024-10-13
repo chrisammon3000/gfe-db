@@ -84,7 +84,7 @@ source_config = read_source_config(
 source_repo_config = source_config.repositories[f"{GITHUB_REPOSITORY_OWNER}/{GITHUB_REPOSITORY_NAME}"]
 default_input_parameters = source_repo_config.default_input_parameters
 
-
+# TODO Do not load new unloaded releases for user requests (only load the ones that are requested)
 # TODO validate commits against tracked source files requiring ingestion
 def lambda_handler(event, context):
 

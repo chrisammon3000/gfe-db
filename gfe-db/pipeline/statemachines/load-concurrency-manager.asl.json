@@ -93,7 +93,7 @@
                             "Type": "Task",
                             "Resource": "${InvokeLoadScriptFunctionArn}",
                             "ResultPath": "$",
-                            "Next": "Sleep 10 Seconds",
+                            "Next": "Watch Load Command",
                             "Retry": [
                                 {
                                     "ErrorEquals": ["States.ALL"],
@@ -103,64 +103,96 @@
                                 }
                             ]
                         },
-                        "Sleep 10 Seconds": {
-                            "Type": "Wait",
-                            "Seconds": 10,
-                            "Next": "Get Load Command Status"
-                        },
-                        "Get Load Command Status": {
-                            "Type": "Task",
-                            "Resource": "arn:aws:states:::aws-sdk:ssm:getCommandInvocation",
-                            "Parameters": {
-                                "CommandId.$": "$.ssm.CommandId",
-                                "InstanceId.$": "$.ssm.InstanceId",
-                                "PluginName": "runShellScript"
-                            },
-                            "Next": "Evaluate Load Command Status",
-                            "ResultSelector": {
-                                "CommandId.$": "$.CommandId",
-                                "InstanceId.$": "$.InstanceId",
-                                "Status.$": "$.Status",
-                                "StandardOutputContent.$": "$.StandardOutputContent",
-                                "StandardErrorContent.$": "$.StandardErrorContent"
-                            },
-                            "ResultPath": "$.ssm",
-                            "Retry": [
+                        "Watch Load Command": {
+                            "Type": "Parallel",
+                            "OutputPath": "$.[0]",
+                            "Next": "Delete Message from Load Queue",
+                            "Catch": [
                                 {
                                     "ErrorEquals": ["States.ALL"],
-                                    "IntervalSeconds": 5,
-                                    "MaxAttempts": 5,
-                                    "BackoffRate": 2.0
-                                }
-                            ]
-                        },
-                        "Evaluate Load Command Status": {
-                            "Type": "Choice",
-                            "Choices": [
-                                {
-                                    "Or": [
-                                        {
-                                            "Variable": "$.ssm.Status",
-                                            "StringEquals": "Failed"
-                                        },
-                                        {
-                                            "Variable": "$.ssm.Status",
-                                            "StringEquals": "Cancelled"
-                                        },
-                                        {
-                                            "Variable": "$.ssm.Status",
-                                            "StringEquals": "TimedOut"
-                                        }
-                                    ],
                                     "Next": "Return Message to Load Queue"
-                                },
-                                {
-                                    "Variable": "$.ssm.Status",
-                                    "StringEquals": "Success",
-                                    "Next": "Delete Message from Load Queue"
                                 }
                             ],
-                            "Default": "Check Status"
+                            "Branches": [
+                                {
+                                    "StartAt": "Get Load Command Status",
+                                    "States": {
+                                        "Get Load Command Status": {
+                                            "Type": "Task",
+                                            "Resource": "arn:aws:states:::aws-sdk:ssm:listCommandInvocations",
+                                            "Next": "Evaluate Load Command Status",
+                                            "Parameters": {
+                                                "CommandId.$": "$.ssm.CommandId",
+                                                "InstanceId.$": "$.ssm.InstanceId",
+                                                "Filters": [
+                                                    {
+                                                        "Key": "DocumentName",
+                                                        "Value": "${Neo4jLoadQueryDocumentName}"
+                                                    }
+                                                ]
+                                            },
+                                            "ResultSelector": {
+                                                "CommandId.$": "$.CommandInvocations[0].CommandId",
+                                                "InstanceId.$": "$.CommandInvocations[0].InstanceId",
+                                                "Status.$": "$.CommandInvocations[0].Status",
+                                                "StandardOutputContent.$": "$.CommandInvocations[0].StandardOutputUrl",
+                                                "StandardErrorContent.$": "$.CommandInvocations[0].StandardErrorUrl"
+                                            },
+                                            "ResultPath": "$.ssm",
+                                            "Retry": [
+                                                {
+                                                    "ErrorEquals": ["States.ALL"],
+                                                    "IntervalSeconds": 5,
+                                                    "MaxAttempts": 5,
+                                                    "BackoffRate": 2.0
+                                                }
+                                            ]
+                                        },
+                                        "Evaluate Load Command Status": {
+                                            "Type": "Choice",
+                                            "Choices": [
+                                                {
+                                                    "Or": [
+                                                        {
+                                                            "Variable": "$.ssm.Status",
+                                                            "StringEquals": "Failed"
+                                                        },
+                                                        {
+                                                            "Variable": "$.ssm.Status",
+                                                            "StringEquals": "Cancelled"
+                                                        },
+                                                        {
+                                                            "Variable": "$.ssm.Status",
+                                                            "StringEquals": "TimedOut"
+                                                        }
+                                                    ],
+                                                    "Next": "Load Failed"
+                                                },
+                                                {
+                                                    "Variable": "$.ssm.Status",
+                                                    "StringEquals": "Success",
+                                                    "Next": "Load Complete"
+                                                }
+                                            ],
+                                            "Default": "Wait for Status"
+                                        },
+                                        "Wait for Status": {
+                                            "Type": "Wait",
+                                            "Seconds": 60,
+                                            "Next": "Get Load Command Status"
+                                        },
+                                        "Load Complete": {
+                                            "Type": "Pass",
+                                            "ResultPath": null,
+                                            "End": true
+                                        },
+                                        "Load Failed": {
+                                            "Type": "Fail",
+                                            "Cause": "LOAD_FAILED"
+                                        }
+                                    }
+                                }
+                            ]
                         },
                         "Return Message to Load Queue": {
                             "Type": "Task",
@@ -211,11 +243,6 @@
                                     }
                                 }
                             }
-                        },
-                        "Check Status": {
-                            "Type": "Wait",
-                            "Seconds": 30,
-                            "Next": "Get Load Command Status"
                         },
                         "Delete Message from Load Queue": {
                             "Type": "Task",

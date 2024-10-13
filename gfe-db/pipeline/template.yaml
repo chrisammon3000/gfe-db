@@ -547,6 +547,7 @@ Resources:
               Action:
                 - dynamodb:Scan
                 - dynamodb:BatchWriteItem
+                - dynamodb:PutItem
               Resource: !GetAtt GfeDbExecutionStateTable.Arn
         - Version: "2012-10-17"
           Statement:
@@ -980,10 +981,10 @@ Resources:
         InvokeBackupScriptFunctionArn: !GetAtt InvokeBackupScriptFunction.Arn
         LcmReceiveMessageFunctionArn: !GetAtt LcmReceiveMessageFunction.Arn
         UpdatePipelineStateMachineExecutionAlarmName: !Ref UpdatePipelineStateMachineExecutionAlarm
-        # LoadReleaseActivityArn: !Ref LoadReleaseActivity
         InvokeLoadScriptFunctionArn: !GetAtt InvokeLoadScriptFunction.Arn
         GfeDbExecutionStateTable: !Ref GfeDbExecutionStateTable
         GfeDbLoadQueueUrl: !GetAtt GfeDbLoadQueue.QueueUrl
+        Neo4jLoadQueryDocumentName: !Ref Neo4jLoadQueryDocument
       Policies:
         - LambdaInvokePolicy:
             FunctionName: !Ref InvokeBackupScriptFunction
@@ -1020,7 +1021,7 @@ Resources:
           Statement:
             - Effect: Allow
               Action:
-                - ssm:GetCommandInvocation
+                - ssm:ListCommandInvocations
               Resource:
                 - !Sub 'arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:*'
         - Version: "2012-10-17"
